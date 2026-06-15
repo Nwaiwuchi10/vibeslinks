@@ -1,0 +1,15 @@
+export const Colors = {
+  primary: '#7B2FFF',
+  primaryLight: '#9B5FFF',
+  primaryDark: '#5A0FDF',
+  white: '#FFFFFF',
+  black: '#000000',
+  dark: '#111218',
+  gray: '#F4F4F6',
+  grayMid: '#E0E0E8',
+  textDark: '#1A1A2E',
+  textGray: '#6B6B80',
+  textLight: 'rgba(255,255,255,0.85)',
+  splashBg: '#7B2FFF',
+  slideBg: '#F5F5FA',
+};
