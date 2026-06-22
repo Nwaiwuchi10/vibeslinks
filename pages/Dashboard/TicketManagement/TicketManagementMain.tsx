@@ -387,12 +387,18 @@ export default function TicketManagementMain() {
           <Text style={[styles.tabLabel, { color: '#1A1A1A', fontWeight: '700' }]}>Tickets</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabItem}>
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => router.push('/dashboard/wallet')}
+        >
           <MaterialCommunityIcons name="wallet-outline" size={24} color="#A0A0A0" />
           <Text style={[styles.tabLabel, { color: '#A0A0A0' }]}>Wallets</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabItem}>
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => router.push('/dashboard/promotion')}
+        >
           <MaterialCommunityIcons name="bullhorn-outline" size={24} color="#A0A0A0" />
           <Text style={[styles.tabLabel, { color: '#A0A0A0' }]}>Promotion</Text>
         </TouchableOpacity>
