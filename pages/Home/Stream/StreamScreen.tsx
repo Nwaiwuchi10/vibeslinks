@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -65,7 +66,12 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
             <View key={action.id} style={styles.actionItem}>
               <TouchableOpacity 
                 style={[styles.actionCircle, { backgroundColor: action.color }]}
-                onPress={() => action.id === '2' ? onCreateEventPress() : null}
+                onPress={() => {
+                  if (action.id === '1') router.push('/go-live');
+                  else if (action.id === '2') onCreateEventPress();
+                  else if (action.id === '3') router.push('/radio');
+                  else if (action.id === '4') router.push('/watch-stream');
+                }}
               >
                 <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
               </TouchableOpacity>
@@ -94,7 +100,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
 
         {/* Feed */}
         {STREAM_FEED.map((post) => (
-          <View key={post.id} style={styles.feedCard}>
+          <TouchableOpacity key={post.id} style={styles.feedCard} activeOpacity={0.92} onPress={() => router.push('/live-details')}>
             <Image source={post.image} style={styles.feedImage} />
             <View style={styles.cardHeader}>
               <View style={styles.userInfo}>
@@ -109,7 +115,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
                 <Text style={styles.typeText}>{post.type}</Text>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
 
         <View style={{ height: 100 }} />

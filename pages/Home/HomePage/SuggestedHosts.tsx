@@ -2,6 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
 
 const SUGGESTED_HOSTS = [
     { id: '1', name: 'Davido', tag: 'Afrobeats', followers: '2.3m', image: require('../../../assets/images/davido.png') },
@@ -13,7 +14,7 @@ const SuggestedHosts = () => {
         <View style={styles.container}>
             <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Suggested Host</Text>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/recent-search')} activeOpacity={0.8}>
                     <Text style={styles.seeAllText}>See all <Ionicons name="chevron-forward" size={12} /></Text>
                 </TouchableOpacity>
             </View>

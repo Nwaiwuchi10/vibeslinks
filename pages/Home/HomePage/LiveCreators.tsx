@@ -21,16 +21,33 @@ const LiveCreators = () => {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveContainer}>
                 {LIVE_CREATORS.map((live) => (
-                    <ImageBackground key={live.id} source={live.image} style={styles.liveCard} imageStyle={{ borderRadius: 12 }}>
-                        <View style={styles.liveOverlay}>
-                            <Text style={styles.liveTitle} numberOfLines={2}>{live.title}</Text>
-                            <View style={styles.liveCreatorRow}>
-                                <Image source={{ uri: live.avatar }} style={styles.liveAvatar} />
-                                <Text style={styles.liveName}>{live.name}</Text>
-                                <Text style={styles.liveTime}>{live.time}</Text>
+                    <TouchableOpacity
+                        key={live.id}
+                        activeOpacity={0.9}
+                        onPress={() => router.push('/live-details')}
+                    >
+                        <ImageBackground source={live.image} style={styles.liveCard} imageStyle={{ borderRadius: 12 }}>
+                            <View style={styles.liveOverlay}>
+                                {/* Top Badge */}
+                                <View style={styles.topBadges}>
+                                    <View style={styles.liveBadge}>
+                                        <View style={styles.dot} />
+                                        <Text style={styles.liveText}>LIVE</Text>
+                                    </View>
+                                </View>
+
+                                {/* Bottom Content */}
+                                <View>
+                                    <Text style={styles.liveTitle} numberOfLines={2}>{live.title}</Text>
+                                    <View style={styles.liveCreatorRow}>
+                                        <Image source={{ uri: live.avatar }} style={styles.liveAvatar} />
+                                        <Text style={styles.liveName}>{live.name}</Text>
+                                        <Text style={styles.liveTime}>{live.time}</Text>
+                                    </View>
+                                </View>
                             </View>
-                        </View>
-                    </ImageBackground>
+                        </ImageBackground>
+                    </TouchableOpacity>
                 ))}
             </ScrollView>
         </View>
@@ -65,7 +82,31 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.3)',
         borderRadius: 12,
         padding: 12,
-        justifyContent: 'flex-end',
+        justifyContent: 'space-between',
+    },
+    topBadges: {
+        flexDirection: 'row',
+        justifyContent: 'flex-start',
+    },
+    liveBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 8,
+    },
+    dot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#FF4B4B',
+        marginRight: 4,
+    },
+    liveText: {
+        fontSize: 8,
+        fontWeight: '800',
+        color: '#1A1A2E',
     },
     liveTitle: { color: '#FFF', fontSize: 12, fontWeight: '600', marginBottom: 8 },
     liveCreatorRow: { flexDirection: 'row', alignItems: 'center' },
