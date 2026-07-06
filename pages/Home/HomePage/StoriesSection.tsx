@@ -1,6 +1,7 @@
 import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 
 const STORIES = [
@@ -15,7 +16,12 @@ const StoriesSection = () => {
     return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesContainer}>
             {STORIES.map((story, index) => (
-                <View key={story.id} style={styles.storyItem}>
+                <TouchableOpacity 
+                    key={story.id} 
+                    style={styles.storyItem} 
+                    activeOpacity={0.8}
+                    onPress={() => router.push(story.hasPlus ? '/add-story' : '/view-story')}
+                >
                     <View style={[styles.storyAvatarWrapper, index > 0 && styles.storyAvatarBorder]}>
                         <Image source={{ uri: story.avatar }} style={styles.storyAvatar} />
                         {story.hasPlus && (
@@ -25,7 +31,7 @@ const StoriesSection = () => {
                         )}
                     </View>
                     <Text style={styles.storyName}>{story.name}</Text>
-                </View>
+                </TouchableOpacity>
             ))}
         </ScrollView>
     );

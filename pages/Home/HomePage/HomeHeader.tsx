@@ -1,4 +1,5 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -12,10 +13,19 @@ const HomeHeader = ({ onAddPress }: { onAddPress: () => void }) => {
             <Text style={styles.headerLogo}>VIBEZLINK</Text>
 
             <View style={styles.headerRight}>
-                <TouchableOpacity style={[styles.headerIconButton, { marginRight: 8 }]}>
+                {/* <TouchableOpacity style={[styles.headerIconButton, { marginRight: 8 }]}>
                     <MaterialCommunityIcons name="ticket-percent-outline" size={20} color="#000" />
+                </TouchableOpacity> */}
+                <TouchableOpacity
+                    style={[styles.headerIconButton, { marginRight: 8 }]}
+                    onPress={() => router.push('/messages')}
+                >
+                    <Ionicons name="chatbubble-ellipses-outline" size={20} color="#000" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.headerIconButton}>
+                <TouchableOpacity
+                    style={styles.headerIconButton}
+                    onPress={() => router.push('/notifications')}
+                >
                     <Ionicons name="notifications-outline" size={20} color="#000" />
                 </TouchableOpacity>
             </View>

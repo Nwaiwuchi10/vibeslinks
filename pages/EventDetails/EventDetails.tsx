@@ -115,7 +115,7 @@ const EventDetails = () => {
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Organizer</Text>
-                            <TouchableOpacity>
+                            <TouchableOpacity onPress={() => router.push('/host-profile')}>
                                 <Text style={styles.aboutHostText}>About Host <Ionicons name="arrow-forward" size={12} /></Text>
                             </TouchableOpacity>
                         </View>
@@ -282,7 +282,7 @@ const EventDetails = () => {
                     <Text style={styles.bottomLabel}>From</Text>
                     <Text style={styles.bottomPrice}>₦10,000 <Text style={styles.bottomSub}>/ Person</Text></Text>
                 </View>
-                <TouchableOpacity style={styles.buyButton}>
+                <TouchableOpacity style={styles.buyButton} onPress={() => router.push('/select-ticket')}>
                     <Text style={styles.buyButtonText}>Buy Tickets</Text>
                 </TouchableOpacity>
             </View>

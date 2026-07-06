@@ -2,12 +2,15 @@ import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AdsBanner from './AdsBanner';
+import FloatingStreamBanner from './FloatingStreamBanner';
 import HomeHeader from './HomeHeader';
 import LiveCreators from './LiveCreators';
 import SocialFeed from './SocialFeed';
 import StoriesSection from './StoriesSection';
-
 import TrendingNearYou from './TrendingNearYou';
+import VibingEventPost from './VibingEventPost';
+import PhotoSocialPost from './PhotoSocialPost';
+import VideoSocialPost from './VideoSocialPost';
 
 export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void }) {
     return (
@@ -21,9 +24,10 @@ export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void 
                 <LiveCreators />
                 <SocialFeed />
 
-
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            <FloatingStreamBanner />
         </SafeAreaView>
     );
 }
