@@ -51,13 +51,17 @@ export default function InterestsScreen() {
         .map((id) => INTERESTS.find((item) => item.id === id)?.name)
         .filter(Boolean) as string[];
 
-      await userService.updateOnboardingData({
+      // Save interests to the user profile
+      await userService.updateProfile({
         interests: selectedNames,
-        favoriteCategories: [],
       });
 
+      // Mark the interests onboarding step as completed
+      await userService.patchMyOnboarding('interests', true);
+
       router.push('/(onboarding)/location' as any);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[InterestsScreen] handleNext error:', err?.response?.data || err);
       // apiClient handles toasts
     }
   };

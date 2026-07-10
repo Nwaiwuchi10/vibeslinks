@@ -117,8 +117,8 @@ export default function SignupScreen() {
         }
       }
 
-      // Route to Onboarding Interests screen
-      router.replace('/(onboarding)/interests' as any);
+      // Route to login screen
+      router.replace('/(auth)/login' as any);
     } catch (err) {
       // Errors handled globally by apiClient
     }

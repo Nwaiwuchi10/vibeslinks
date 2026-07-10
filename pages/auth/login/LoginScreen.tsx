@@ -30,29 +30,6 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-
-  const handleSendCode = async () => {
-    try {
-      if (authMode === 'email') {
-        if (!email) {
-          dispatch(showToast({ type: 'warning', message: 'Please enter your email first.' }));
-          return;
-        }
-        await userService.sendVerificationCode(email);
-        dispatch(showToast({ type: 'success', message: 'Verification code sent to your email.' }));
-      } else {
-        if (!phone) {
-          dispatch(showToast({ type: 'warning', message: 'Please enter your phone number first.' }));
-          return;
-        }
-        await userService.sendPhoneVerificationCode(phone, '+234');
-        dispatch(showToast({ type: 'success', message: 'Verification code sent to your phone.' }));
-      }
-    } catch (err) {
-      // Errors are caught and toasted by apiClient globally
-    }
-  };
 
   const handleLogin = async () => {
     try {
@@ -62,21 +39,11 @@ export default function LoginScreen() {
           return;
         }
 
-        // If a verification code is entered, we verify it first
-        if (code) {
-          await userService.verifyEmailCode(email, code);
-        }
-
         await authService.signIn(email, password);
       } else {
         if (!phone || !password) {
           dispatch(showToast({ type: 'warning', message: 'Please fill in phone and password.' }));
           return;
-        }
-
-        // If a verification code is entered, verify code first
-        if (code) {
-          await userService.verifyPhoneCode(phone, '+234', code);
         }
 
         await authService.signInWithPhone(phone, '+234', password);
@@ -201,18 +168,6 @@ export default function LoginScreen() {
           <Text style={styles.forgotPasswordText}>Forget password?</Text>
         </TouchableOpacity>
 
-        <Input 
-          placeholder="Enter 6 digit code" 
-          value={code} 
-          onChangeText={setCode} 
-          keyboardType="number-pad"
-          rightElement={
-            <TouchableOpacity onPress={handleSendCode}>
-              <Text style={styles.sendCodeText}>Send code</Text>
-            </TouchableOpacity>
-          }
-        />
-
         <TouchableOpacity 
           style={styles.loginButton} 
           activeOpacity={0.88}
@@ -329,12 +284,6 @@ const styles = StyleSheet.create({
   toggleLink: {
     fontSize: 13,
     color: Colors.primary,
-  },
-  sendCodeText: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600',
-    paddingRight: 8,
   },
   loginButton: {
     width: '100%',

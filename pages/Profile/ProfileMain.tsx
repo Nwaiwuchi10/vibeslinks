@@ -67,9 +67,15 @@ const menuItems = [
   },
 ];
 
+import { useAppSelector } from '@/store/hooks';
+
 export default function ProfileMain() {
   const router = useRouter();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const { user } = useAppSelector((state) => state.auth);
+
+  const fullName = user?.fullName || user?.name || 'Vibez User';
+  const avatarUrl = user?.profilePictureUrl || user?.avatarUrl;
 
   const renderIcon = (item: any) => {
     if (item.iconType === 'Ionicons') {
@@ -102,14 +108,14 @@ export default function ProfileMain() {
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
             <Image
-              source={require('@/assets/images/artist_event.png')}
+              source={avatarUrl ? { uri: avatarUrl } : require('@/assets/images/artist_event.png')}
               style={styles.avatar}
             />
             <TouchableOpacity style={styles.editBadge}>
               <Ionicons name="person-outline" size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.userName}>Roland Emmanuel</Text>
+          <Text style={styles.userName}>{fullName}</Text>
         </View>
 
         {/* Menu Items */}

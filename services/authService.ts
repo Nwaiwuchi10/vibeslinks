@@ -9,10 +9,11 @@ export const authService = {
       emailOrUsername,
       password,
     });
-    if (response.data?.access_token) {
+    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (token) {
       store.dispatch(
         setCredentials({
-          token: response.data.access_token,
+          token,
           user: response.data.user || {},
         })
       );
@@ -27,10 +28,11 @@ export const authService = {
       countryCode,
       password,
     });
-    if (response.data?.access_token) {
+    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (token) {
       store.dispatch(
         setCredentials({
-          token: response.data.access_token,
+          token,
           user: response.data.user || {},
         })
       );
@@ -45,10 +47,11 @@ export const authService = {
       providerUserId,
       email,
     });
-    if (response.data?.access_token) {
+    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (token) {
       store.dispatch(
         setCredentials({
-          token: response.data.access_token,
+          token,
           user: response.data.user || {},
         })
       );

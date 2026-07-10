@@ -48,28 +48,28 @@ export const hostService = {
 
   // Host Wallet
   async getWalletDetails() {
-    return (await apiClient.get('/host-wallet/details')).data;
+    return (await apiClient.get('/host-dashboard/wallet')).data;
   },
 
   async createStripeConnectAccount(data: { country: string; email: string }) {
-    const response = await apiClient.post('/host-wallet/stripe-connect', data);
+    const response = await apiClient.post('/host-dashboard/wallet/stripe-connect/account-link', data);
     store.dispatch(showToast({ type: 'success', message: 'Stripe onboarding started.' }));
     return response.data;
   },
 
   async requestPayoutTransfer(amount: number) {
-    const response = await apiClient.post('/host-wallet/transfer', { amount });
+    const response = await apiClient.post('/host-dashboard/wallet/withdrawals', { amount });
     store.dispatch(showToast({ type: 'success', message: 'Payout requested successfully!' }));
     return response.data;
   },
 
   async getWalletTransactions() {
-    return (await apiClient.get('/host-wallet/history')).data;
+    return (await apiClient.get('/host-dashboard/wallet/transactions')).data;
   },
 
   // Host Promotions
   async getCampaigns(eventId?: string) {
-    return (await apiClient.get('/host-promotions/campaigns', { params: { eventId } })).data;
+    return (await apiClient.get('/host-dashboard/promotions', { params: { eventId } })).data;
   },
 
   async createCampaign(data: {
@@ -79,17 +79,17 @@ export const hostService = {
     targetReach: number;
     paymentIntentId?: string;
   }) {
-    const response = await apiClient.post('/host-promotions/campaigns', data);
+    const response = await apiClient.post('/host-dashboard/promotions', data);
     store.dispatch(showToast({ type: 'success', message: 'Campaign created!' }));
     return response.data;
   },
 
   async toggleCampaign(campaignId: string) {
-    return (await apiClient.patch(`/host-promotions/campaigns/${campaignId}/toggle`)).data;
+    return (await apiClient.post(`/host-dashboard/promotions/${campaignId}/end`)).data;
   },
 
   async terminateCampaign(campaignId: string, reason: string) {
-    const response = await apiClient.patch(`/host-promotions/campaigns/${campaignId}/terminate`, { reason });
+    const response = await apiClient.post(`/host-dashboard/promotions/${campaignId}/end`, { reason });
     store.dispatch(showToast({ type: 'success', message: 'Campaign terminated.' }));
     return response.data;
   },

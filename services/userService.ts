@@ -17,6 +17,17 @@ export const userService = {
   }) {
     const response = await apiClient.post('/users/register', data);
     store.dispatch(showToast({ type: 'success', message: response.data?.message || 'Verification sent.' }));
+    
+    // Auto-authenticate if token is returned
+    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (token) {
+      store.dispatch(
+        setCredentials({
+          token,
+          user: response.data.user || {},
+        })
+      );
+    }
     return response.data;
   },
 
@@ -27,12 +38,14 @@ export const userService = {
     code: string;
   }) {
     const response = await apiClient.post('/users/verify-registration', data);
+    console.log('[userService] verifyRegistration response:', response.data);
     store.dispatch(showToast({ type: 'success', message: 'Account verified successfully!' }));
     // Auto-authenticate if token returned
-    if (response.data?.access_token) {
+    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (token) {
       store.dispatch(
         setCredentials({
-          token: response.data.access_token,
+          token,
           user: response.data.user || {},
         })
       );
@@ -117,6 +130,7 @@ export const userService = {
     username?: string;
     country?: string;
     profilePictureUrl?: string;
+    interests?: string[];
     contactDetails?: {
       phone?: string;
       website?: string;
@@ -125,6 +139,16 @@ export const userService = {
   }) {
     const response = await apiClient.patch('/users/me/profile', profileData);
     store.dispatch(showToast({ type: 'success', message: 'Profile updated successfully.' }));
+    
+    // Sync local Redux state with updated user details
+    const currentUser = store.getState().auth.user || {};
+    const updatedUser = response.data?.user || response.data || {};
+    store.dispatch(
+      setCredentials({
+        token: store.getState().auth.token || '',
+        user: { ...currentUser, ...updatedUser, ...profileData }, // merge current state, backend response, and request data
+      })
+    );
     return response.data;
   },
 

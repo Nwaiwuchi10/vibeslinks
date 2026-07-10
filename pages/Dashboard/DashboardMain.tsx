@@ -14,11 +14,13 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useAppSelector } from '@/store/hooks';
 
 const { width } = Dimensions.get('window');
 
 export default function DashboardMain() {
   const router = useRouter();
+  const { user } = useAppSelector((state) => state.auth);
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState('Last Month');
   const [engagementModalVisible, setEngagementModalVisible] = useState(false);
@@ -50,11 +52,11 @@ export default function DashboardMain() {
               <Ionicons name="arrow-back" size={20} color="#1A1A1A" />
             </TouchableOpacity>
             <Image 
-              source={require('@/assets/images/dav.png')} 
+              source={user?.profilePictureUrl || user?.avatarUrl ? { uri: user.profilePictureUrl || user.avatarUrl } : require('@/assets/images/dav.png')} 
               style={styles.hostAvatar} 
             />
             <View style={styles.hostTextCol}>
-              <Text style={styles.hostName}>Roland Emmanuel</Text>
+              <Text style={styles.hostName}>{user?.fullName || user?.name || 'Vibez Host'}</Text>
               <Text style={styles.hostWelcome}>Welcome Back</Text>
             </View>
           </View>

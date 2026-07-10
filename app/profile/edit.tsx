@@ -13,9 +13,32 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
+import { useAppSelector } from '@/store/hooks';
+import { userService } from '@/services/userService';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { user } = useAppSelector((state) => state.auth);
+
+  const [name, setName] = useState(user?.fullName || user?.name || '');
+  const [phone, setPhone] = useState(user?.contactDetails?.phone || user?.phoneNumber || '');
+  const [email, setEmail] = useState(user?.email || '');
+
+  const avatarUrl = user?.profilePictureUrl || user?.avatarUrl;
+
+  const handleUpdate = async () => {
+    try {
+      await userService.updateProfile({
+        name,
+        contactDetails: {
+          phone,
+        },
+      });
+      router.back();
+    } catch (err) {
+      // apiClient handles toasts
+    }
+  };
   
   return (
     <SafeAreaView style={styles.container}>
@@ -35,14 +58,14 @@ export default function EditProfileScreen() {
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
              <Image
-              source={require('@/assets/images/artist_event.png')}
+              source={avatarUrl ? { uri: avatarUrl } : require('@/assets/images/artist_event.png')}
               style={styles.avatar}
             />
             <TouchableOpacity style={styles.editBadge}>
               <Ionicons name="camera-outline" size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.userName}>Roland Emmanuel</Text>
+          <Text style={styles.userName}>{name}</Text>
         </View>
 
         {/* Form */}
@@ -52,7 +75,9 @@ export default function EditProfileScreen() {
             <View style={styles.inputContainer}>
               <TextInput 
                 style={styles.input}
-                placeholder="Email Address"
+                value={name}
+                onChangeText={setName}
+                placeholder="Full Name"
                 placeholderTextColor="#BBB"
               />
             </View>
@@ -63,13 +88,11 @@ export default function EditProfileScreen() {
             <View style={styles.inputContainer}>
               <TextInput 
                 style={styles.input}
-                defaultValue="08159846865"
+                value={phone}
+                onChangeText={setPhone}
                 placeholder="Phone number"
                 keyboardType="phone-pad"
               />
-              <TouchableOpacity>
-                <Text style={styles.changeText}>Change</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -78,7 +101,8 @@ export default function EditProfileScreen() {
             <View style={styles.inputContainer}>
               <TextInput 
                 style={styles.input}
-                defaultValue="rolandemmanuel103@gmail.com"
+                value={email}
+                editable={false}
                 placeholder="Email"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -88,7 +112,7 @@ export default function EditProfileScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Gender</Text>
-            <TouchableOpacity style={styles.inputContainer}>
+            <TouchableOpacity style={styles.inputContainer} disabled>
               <Text style={styles.inputText}>Male</Text>
               <Ionicons name="chevron-down" size={18} color="#999" />
             </TouchableOpacity>
@@ -98,7 +122,7 @@ export default function EditProfileScreen() {
 
       {/* Fixed Bottom Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.updateButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.updateButton} onPress={handleUpdate}>
           <Text style={styles.updateButtonText}>Update</Text>
         </TouchableOpacity>
       </View>
