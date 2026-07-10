@@ -16,12 +16,19 @@ import SocialButton from '../components/SocialButton';
 import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
 
+import { userService } from '@/services/userService';
+import { authService } from '@/services/authService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+
 export default function SignupScreen() {
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState<'social' | 'form'>('social');
   const [authMode, setAuthMode] = useState<'email' | 'phone'>('email');
   
-  const [agreed, setAgreed] = useState(false);
+  const [agreed, setAgreed] = useState(true);
   const [newsletter, setNewsletter] = useState(false);
+
   
   // form states
   const [firstName, setFirstName] = useState('');
@@ -32,6 +39,113 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
+
+  const handleSendCode = async () => {
+    try {
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (!firstName || !lastName || !username || !password) {
+        dispatch(showToast({ type: 'warning', message: 'Please fill in all profile details and password.' }));
+        return;
+      }
+
+      if (authMode === 'email') {
+        if (!email) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your email.' }));
+          return;
+        }
+        await userService.register({
+          method: 'email',
+          fullName,
+          username,
+          email,
+          password,
+          acceptedTerms: agreed,
+        });
+      } else {
+        if (!phone) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your phone number.' }));
+          return;
+        }
+        await userService.register({
+          method: 'phone',
+          fullName,
+          username,
+          phoneNumber: phone,
+          password,
+          acceptedTerms: agreed,
+        });
+      }
+    } catch (err) {
+      // Errors handled globally by apiClient
+    }
+  };
+
+  const handleVerify = async () => {
+    try {
+      if (password !== confirmPassword) {
+        dispatch(showToast({ type: 'warning', message: 'Passwords do not match.' }));
+        return;
+      }
+      if (!code) {
+        dispatch(showToast({ type: 'warning', message: 'Please enter the 6-digit verification code.' }));
+        return;
+      }
+
+      if (authMode === 'email') {
+        await userService.verifyRegistration({
+          method: 'email',
+          email,
+          code,
+        });
+      } else {
+        await userService.verifyRegistration({
+          method: 'phone',
+          phoneNumber: phone,
+          code,
+        });
+      }
+
+      // Check if newsletter registration should be sent
+      if (newsletter) {
+        try {
+          await userService.updateSettings({
+            notifications: { email: true, push: true },
+            receivesNewsletter: true,
+          });
+        } catch (settingsError) {
+          console.warn('[SignupScreen] Newsletter subscription failed, continuing navigation:', settingsError);
+        }
+      }
+
+      // Route to Onboarding Interests screen
+      router.replace('/(onboarding)/interests' as any);
+    } catch (err) {
+      // Errors handled globally by apiClient
+    }
+  };
+
+
+  const handleSocialRegister = async (provider: 'google' | 'facebook' | 'apple') => {
+    try {
+      if (!agreed) {
+        dispatch(showToast({ type: 'warning', message: 'You must agree to the Terms and Privacy Policy.' }));
+        return;
+      }
+      dispatch(showToast({ type: 'info', message: `Registering with ${provider}...` }));
+      await userService.register({
+        method: provider,
+        fullName: 'Vibez User',
+        username: `user_${provider}_${Math.floor(Math.random() * 1000)}`,
+        email: `user.${provider}@example.com`,
+        acceptedTerms: agreed,
+        providerUserId: `mock-${provider}-id`,
+      });
+      router.replace('/(onboarding)/interests' as any);
+    } catch (err) {
+      // Errors toasted by apiClient
+    }
+  };
+
 
   const renderSocial = () => (
     <View style={styles.contentContainer}>
@@ -49,17 +163,17 @@ export default function SignupScreen() {
         <SocialButton
           iconType="google"
           title="Continue with Google"
-          onPress={() => {}}
+          onPress={() => handleSocialRegister('google')}
         />
         <SocialButton
           iconType="facebook"
           title="Continue with Facebook"
-          onPress={() => {}}
+          onPress={() => handleSocialRegister('facebook')}
         />
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() => {}}
+          onPress={() => handleSocialRegister('apple')}
         />
       </View>
 
@@ -150,7 +264,7 @@ export default function SignupScreen() {
           onChangeText={setCode} 
           keyboardType="number-pad"
           rightElement={
-            <TouchableOpacity>
+            <TouchableOpacity onPress={handleSendCode}>
               <Text style={styles.sendCodeText}>Send code</Text>
             </TouchableOpacity>
           }
@@ -172,7 +286,7 @@ export default function SignupScreen() {
         <TouchableOpacity 
           style={styles.verifyButton} 
           activeOpacity={0.88}
-          onPress={() => router.push('/(onboarding)/interests' as any)}
+          onPress={handleVerify}
         >
           <Text style={styles.verifyButtonText}>Verify</Text>
         </TouchableOpacity>
@@ -186,6 +300,7 @@ export default function SignupScreen() {
       </View>
     </View>
   );
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

@@ -15,7 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
 
+import { authService } from '@/services/authService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+
 export default function ResetPasswordScreen() {
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState<'forgot' | 'reset'>('forgot');
   const [authMode, setAuthMode] = useState<'email' | 'phone'>('email');
   
@@ -26,9 +31,50 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleSendCode = () => {
-    // Transition to the reset step to enter OTP and new password
-    setStep('reset');
+  const handleSendCode = async () => {
+    try {
+      if (authMode === 'email') {
+        if (!email) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your email.' }));
+          return;
+        }
+        await authService.forgotPassword(email);
+      } else {
+        if (!phone) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your phone number.' }));
+          return;
+        }
+        await authService.forgotPasswordWithPhone(phone, '+234');
+      }
+      // Transition to the reset step to enter OTP and new password on success
+      setStep('reset');
+    } catch (err) {
+      // apiClient handles toasts
+    }
+  };
+
+  const handleConfirm = async () => {
+    try {
+      if (password !== confirmPassword) {
+        dispatch(showToast({ type: 'warning', message: 'Passwords do not match.' }));
+        return;
+      }
+      if (!code) {
+        dispatch(showToast({ type: 'warning', message: 'Please enter the 6-digit code.' }));
+        return;
+      }
+
+      if (authMode === 'email') {
+        await authService.resetPassword(code, 'OldPassword1!', password);
+      } else {
+        await authService.resetPasswordWithPhone(phone, '+234', code, password);
+      }
+
+      // Navigate to login screen on successful POST request
+      router.replace('/(auth)/login');
+    } catch (err) {
+      // apiClient handles toasts
+    }
   };
 
   const renderForgot = () => (
@@ -103,7 +149,7 @@ export default function ResetPasswordScreen() {
           onChangeText={setCode} 
           keyboardType="number-pad"
           rightElement={
-            <TouchableOpacity onPress={() => {}}>
+            <TouchableOpacity onPress={handleSendCode}>
               <Text style={styles.sendCodeText}>Resend</Text>
             </TouchableOpacity>
           }
@@ -123,7 +169,7 @@ export default function ResetPasswordScreen() {
           isPassword 
         />
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.replace('/(auth)/login' as any)} activeOpacity={0.88}>
+        <TouchableOpacity style={styles.actionButton} onPress={handleConfirm} activeOpacity={0.88}>
           <Text style={styles.actionButtonText}>Confirm</Text>
         </TouchableOpacity>
       </View>
@@ -136,6 +182,7 @@ export default function ResetPasswordScreen() {
       </View>
     </View>
   );
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

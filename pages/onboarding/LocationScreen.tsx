@@ -10,8 +10,26 @@ import {
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { userService } from '@/services/userService';
 
 export default function LocationScreen() {
+  const handleUseCurrentLocation = async () => {
+    try {
+      await userService.updateProfile({
+        contactDetails: {
+          location: 'Lagos, Nigeria',
+        },
+      });
+      router.push('/(onboarding)/location-confirmed' as any);
+    } catch (err) {
+      // apiClient handles toasts
+    }
+  };
+
+  const handleSkip = () => {
+    router.push('/(onboarding)/location-confirmed' as any);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -42,9 +60,7 @@ export default function LocationScreen() {
           <TouchableOpacity
             style={styles.primaryButton}
             activeOpacity={0.88}
-            onPress={() => {
-              // Usually request location permissions here
-            }}
+            onPress={handleUseCurrentLocation}
           >
             <Text style={styles.primaryButtonText}>Use My Currently Location</Text>
           </TouchableOpacity>
@@ -61,6 +77,7 @@ export default function LocationScreen() {
         <TouchableOpacity
           style={styles.skipContainer}
           activeOpacity={0.8}
+          onPress={handleSkip}
         >
           <Text style={styles.skipText}>Skip For Now</Text>
         </TouchableOpacity>
@@ -68,6 +85,7 @@ export default function LocationScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {

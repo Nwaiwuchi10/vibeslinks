@@ -13,8 +13,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { userService } from '@/services/userService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
 
 export default function EnterLocationScreen() {
+  const dispatch = useAppDispatch();
   const [search, setSearch] = useState('');
 
   const [street, setStreet] = useState('');
@@ -24,6 +28,41 @@ export default function EnterLocationScreen() {
   const [postal, setPostal] = useState('');
 
   const isFilled = street.length > 0; // simplistic check to show "Confirm Location" instead of "Fill Location"
+
+  const handleConfirm = async () => {
+    try {
+      const locationParts = [street, city, state, country].map(s => s.trim()).filter(Boolean);
+      const fullLocationString = locationParts.join(', ');
+
+      if (!fullLocationString) {
+        dispatch(showToast({ type: 'warning', message: 'Please enter at least one address detail.' }));
+        return;
+      }
+
+      await userService.updateProfile({
+        contactDetails: {
+          location: fullLocationString,
+        },
+      });
+
+      router.push('/(onboarding)/location-confirmed' as any);
+    } catch (err) {
+      // apiClient handles toasts
+    }
+  };
+
+  const handleUseCurrentLocation = async () => {
+    try {
+      await userService.updateProfile({
+        contactDetails: {
+          location: 'Lagos, Nigeria',
+        },
+      });
+      router.push('/(onboarding)/location-confirmed' as any);
+    } catch (err) {
+      // apiClient handles toasts
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -57,7 +96,11 @@ export default function EnterLocationScreen() {
             )}
           </View>
 
-          <TouchableOpacity style={styles.currentLocationRow} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.currentLocationRow} 
+            activeOpacity={0.7}
+            onPress={handleUseCurrentLocation}
+          >
             <Ionicons name="navigate" size={20} color={Colors.primary} style={styles.navigateIcon} />
             <Text style={styles.currentLocationText}>Use my current location</Text>
           </TouchableOpacity>
@@ -130,9 +173,7 @@ export default function EnterLocationScreen() {
           <TouchableOpacity
             style={styles.confirmButton}
             activeOpacity={0.88}
-            onPress={() => {
-              router.push('/(onboarding)/location-confirmed' as any);
-            }}
+            onPress={handleConfirm}
           >
             <Text style={styles.confirmButtonText}>Confirm</Text>
           </TouchableOpacity>
@@ -141,6 +182,7 @@ export default function EnterLocationScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {

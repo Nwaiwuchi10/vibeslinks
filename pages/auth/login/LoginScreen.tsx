@@ -16,7 +16,13 @@ import SocialButton from '../components/SocialButton';
 import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
 
+import { authService } from '@/services/authService';
+import { userService } from '@/services/userService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+
 export default function LoginScreen() {
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState<'social' | 'form'>('social');
   const [authMode, setAuthMode] = useState<'email' | 'phone'>('phone');
   
@@ -25,6 +31,75 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+
+  const handleSendCode = async () => {
+    try {
+      if (authMode === 'email') {
+        if (!email) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your email first.' }));
+          return;
+        }
+        await userService.sendVerificationCode(email);
+        dispatch(showToast({ type: 'success', message: 'Verification code sent to your email.' }));
+      } else {
+        if (!phone) {
+          dispatch(showToast({ type: 'warning', message: 'Please enter your phone number first.' }));
+          return;
+        }
+        await userService.sendPhoneVerificationCode(phone, '+234');
+        dispatch(showToast({ type: 'success', message: 'Verification code sent to your phone.' }));
+      }
+    } catch (err) {
+      // Errors are caught and toasted by apiClient globally
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      if (authMode === 'email') {
+        if (!email || !password) {
+          dispatch(showToast({ type: 'warning', message: 'Please fill in email and password.' }));
+          return;
+        }
+
+        // If a verification code is entered, we verify it first
+        if (code) {
+          await userService.verifyEmailCode(email, code);
+        }
+
+        await authService.signIn(email, password);
+      } else {
+        if (!phone || !password) {
+          dispatch(showToast({ type: 'warning', message: 'Please fill in phone and password.' }));
+          return;
+        }
+
+        // If a verification code is entered, verify code first
+        if (code) {
+          await userService.verifyPhoneCode(phone, '+234', code);
+        }
+
+        await authService.signInWithPhone(phone, '+234', password);
+      }
+
+      // Route to Home Tabs after successful login
+      router.replace('/(tabs)');
+    } catch (err) {
+      // Errors are toasted by apiClient globally
+    }
+  };
+
+  const handleSocialLogin = async (provider: 'google' | 'facebook' | 'apple') => {
+    try {
+      dispatch(showToast({ type: 'info', message: `Connecting with ${provider}...` }));
+      // In production, trigger SSO SDK then call authService.signInWithSso
+      // Mocking for integration completion
+      await authService.signInWithSso(provider, `mock-${provider}-id`, `user-${provider}@example.com`);
+      router.replace('/(tabs)');
+    } catch (err) {
+      // Errors toasted by apiClient
+    }
+  };
 
   const renderSocial = () => (
     <View style={styles.contentContainer}>
@@ -42,21 +117,25 @@ export default function LoginScreen() {
         <SocialButton
           iconType="google"
           title="Continue with Google"
-          onPress={() => {}}
+          onPress={() => handleSocialLogin('google')}
         />
         <SocialButton
           iconType="facebook"
           title="Continue with Facebook"
-          onPress={() => {}}
+          onPress={() => handleSocialLogin('facebook')}
         />
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() => {}}
+          onPress={() => handleSocialLogin('apple')}
         />
       </View>
 
-      <TouchableOpacity style={styles.loginButton} activeOpacity={0.88}>
+      <TouchableOpacity 
+        style={styles.loginButton} 
+        activeOpacity={0.88}
+        onPress={() => setStep('form')}
+      >
         <Text style={styles.loginButtonText}>Login</Text>
       </TouchableOpacity>
 
@@ -128,13 +207,17 @@ export default function LoginScreen() {
           onChangeText={setCode} 
           keyboardType="number-pad"
           rightElement={
-            <TouchableOpacity>
+            <TouchableOpacity onPress={handleSendCode}>
               <Text style={styles.sendCodeText}>Send code</Text>
             </TouchableOpacity>
           }
         />
 
-        <TouchableOpacity style={styles.loginButton} activeOpacity={0.88}>
+        <TouchableOpacity 
+          style={styles.loginButton} 
+          activeOpacity={0.88}
+          onPress={handleLogin}
+        >
           <Text style={styles.loginButtonText}>Login</Text>
         </TouchableOpacity>
       </View>
@@ -147,6 +230,7 @@ export default function LoginScreen() {
       </View>
     </View>
   );
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

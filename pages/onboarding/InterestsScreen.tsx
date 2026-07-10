@@ -1,4 +1,5 @@
 import { Colors } from '@/constants/Colors';
+import { userService } from '@/services/userService';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -41,6 +42,23 @@ export default function InterestsScreen() {
       if (selected.length < 5) {
         setSelected([...selected, id]);
       }
+    }
+  };
+
+  const handleNext = async () => {
+    try {
+      const selectedNames = selected
+        .map((id) => INTERESTS.find((item) => item.id === id)?.name)
+        .filter(Boolean) as string[];
+
+      await userService.updateOnboardingData({
+        interests: selectedNames,
+        favoriteCategories: [],
+      });
+
+      router.push('/(onboarding)/location' as any);
+    } catch (err) {
+      // apiClient handles toasts
     }
   };
 
@@ -96,7 +114,7 @@ export default function InterestsScreen() {
         <TouchableOpacity
           style={[styles.nextButton, selected.length === 0 && styles.nextButtonDisabled]}
           activeOpacity={0.88}
-          onPress={() => router.push('/(onboarding)/location' as any)}
+          onPress={handleNext}
         >
           <Text style={styles.nextButtonText}>Next</Text>
         </TouchableOpacity>
@@ -104,6 +122,7 @@ export default function InterestsScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {

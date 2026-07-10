@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,11 @@ import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
+import { eventService } from '@/services/eventService';
+import { userService } from '@/services/userService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+
 const MOCK_ARTISTS = [
   { id: '1', name: 'Sophia Carter', avatar: 'https://i.pravatar.cc/150?img=1' },
   { id: '2', name: 'Malik Johnson', avatar: 'https://i.pravatar.cc/150?img=11' },
@@ -25,8 +30,33 @@ const MOCK_ARTISTS = [
 ];
 
 export default function FollowArtistsScreen() {
-  const [selected, setSelected] = useState<string[]>(['2', '6', '7']);
+  const dispatch = useAppDispatch();
+  const [artists, setArtists] = useState<any[]>(MOCK_ARTISTS);
+  const [selected, setSelected] = useState<string[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadArtists() {
+      setIsLoading(true);
+      try {
+        const res = await eventService.getArtistOptions();
+        const list = Array.isArray(res) ? res : res.artists || [];
+        if (list.length > 0) {
+          setArtists(list.map((a: any) => ({
+            id: a.id || String(a.userId),
+            name: a.name || a.fullName || 'Artist',
+            avatar: a.avatarUrl || a.profilePictureUrl || `https://i.pravatar.cc/150?img=${a.id || Math.floor(Math.random() * 50)}`,
+          })));
+        }
+      } catch (err) {
+        console.log('[FollowArtistsScreen] Error loading artists, using mocks:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadArtists();
+  }, []);
 
   const toggleSelect = (id: string) => {
     if (selected.includes(id)) {
@@ -36,8 +66,22 @@ export default function FollowArtistsScreen() {
     }
   };
 
-  const handleFollow = () => {
-    setShowModal(true);
+  const handleFollow = async () => {
+    try {
+      if (selected.length === 0) {
+        dispatch(showToast({ type: 'warning', message: 'Please select at least one artist to follow.' }));
+        return;
+      }
+
+      // Send follow request for each selected artist
+      await Promise.all(
+        selected.map((artistId) => userService.followArtist(artistId))
+      );
+
+      setShowModal(true);
+    } catch (err) {
+      // apiClient handles toasts
+    }
   };
 
   const handleDone = () => {
@@ -66,7 +110,7 @@ export default function FollowArtistsScreen() {
         <Text style={styles.subtitle}>Follow creators you love or people you may know.</Text>
 
         <View style={styles.listContainer}>
-          {MOCK_ARTISTS.map((artist) => {
+          {artists.map((artist) => {
             const isSelected = selected.includes(artist.id);
             return (
               <TouchableOpacity
@@ -97,6 +141,7 @@ export default function FollowArtistsScreen() {
         >
           <Text style={styles.followButtonText}>Follow</Text>
         </TouchableOpacity>
+
 
         <TouchableOpacity 
           style={styles.skipButton} 
