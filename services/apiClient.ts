@@ -1,9 +1,17 @@
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { store } from '@/store';
 import { startLoading, stopLoading } from '@/store/slices/loadingSlice';
 import { showToast } from '@/store/slices/toastSlice';
 import { clearCredentials } from '@/store/slices/authSlice';
+import { router } from 'expo-router';
+
+// Extend Axios config so callers can pass `{ silent: true }` to suppress error toasts
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    silent?: boolean;
+  }
+}
 
 const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
 const TOKEN_KEY = 'vibezlink_access_token';
@@ -43,6 +51,12 @@ apiClient.interceptors.request.use(
       const token = state.auth?.token || await SecureStore.getItemAsync(TOKEN_KEY);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        
+        // Print it nicely so the user can easily find it
+        console.log('\n\n======================================================');
+        console.log('✨ YOUR CURRENT ACCESS TOKEN (Copy below this line):');
+        console.log(token);
+        console.log('======================================================\n\n');
       }
     } catch (err) {
       console.error('Error fetching token:', err);
@@ -93,15 +107,23 @@ apiClient.interceptors.response.use(
             message: 'Session expired. Please sign in again.',
           })
         );
+        // Force redirect to login screen
+        router.replace('/(auth)/login');
+      } else {
+        // Even if Redux doesn't think we're authenticated (e.g. initial load), force redirect anyway
+        router.replace('/(auth)/login');
       }
     } else {
-      // Show error toast for non-401 errors
-      store.dispatch(
-        showToast({
-          type: 'error',
-          message: typeof message === 'string' ? message : JSON.stringify(message),
-        })
-      );
+      // Skip toast when caller opts out via { silent: true } in request config
+      const isSilent = (error.config as any)?.silent === true;
+      if (!isSilent) {
+        store.dispatch(
+          showToast({
+            type: 'error',
+            message: typeof message === 'string' ? message : JSON.stringify(message),
+          })
+        );
+      }
     }
 
     return Promise.reject(error);

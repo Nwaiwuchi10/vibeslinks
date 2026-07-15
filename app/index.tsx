@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import { useAppSelector } from '@/store/hooks';
 
 import {
   OnboardingScreen,
@@ -10,6 +11,7 @@ import {
   WelcomeScreen,
 } from '@/components/onboarding';
 
+const TOKEN_KEY = 'vibezlink_access_token';
 const ONBOARDING_KEY = 'vibezlink_has_onboarded';
 
 type Stage = 'splash' | 'tagline' | 'welcome' | 'slides';
@@ -17,17 +19,36 @@ type Stage = 'splash' | 'tagline' | 'welcome' | 'slides';
 export default function OnboardingRoute() {
   const [stage, setStage] = useState<Stage>('splash');
 
+  // Also watch Redux – if _layout.tsx restores credentials while splash is running,
+  // the isAuthenticated flag will flip and we can react immediately.
+  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+
+  // If auth state flips to true at any point during the splash/onboarding flow, go to home
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)' as any);
+    }
+  }, [isAuthenticated]);
+
   const handleSplashFinish = async () => {
     try {
-      // const onboarded = await SecureStore.getItemAsync(ONBOARDING_KEY);
-      const onboarded: string | null = 'false'; // Force false for testing the UI flow
-      
+      // 1. Check for an existing access token first
+      const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (savedToken) {
+        // Token exists → user is already logged in → go straight to home
+        console.log('[OnboardingRoute] Token found, redirecting to Home.');
+        router.replace('/(tabs)' as any);
+        return;
+      }
+
+      // 2. No token – check if they've seen onboarding before
+      const onboarded = await SecureStore.getItemAsync(ONBOARDING_KEY);
       if (onboarded === 'true') {
-        // If already onboarded, send to auth or main app
+        // Seen onboarding but not logged in → go to login
         console.log('[OnboardingRoute] Already onboarded, redirecting to Login.');
         router.replace('/(auth)/login' as any);
       } else {
-        // First time user, show tagline next
+        // Brand new user → show tagline → welcome → slides
         setStage('tagline');
       }
     } catch (error) {
@@ -64,9 +85,9 @@ export default function OnboardingRoute() {
       {stage === 'splash' && <SplashScreen onFinish={handleSplashFinish} />}
       {stage === 'tagline' && <TaglineScreen onFinish={handleTaglineFinish} />}
       {stage === 'welcome' && (
-        <WelcomeScreen 
-          onGetStarted={handleWelcomeGetStarted} 
-          onSignIn={handleWelcomeSignIn} 
+        <WelcomeScreen
+          onGetStarted={handleWelcomeGetStarted}
+          onSignIn={handleWelcomeSignIn}
         />
       )}
       {stage === 'slides' && <OnboardingScreen onDone={handleOnboardingDone} />}

@@ -15,6 +15,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,6 +72,20 @@ export default function GoLiveScreen() {
 
     const toggleMode = () => {
         setAudioMode(audioMode === 'voice' ? 'camera' : 'voice');
+    };
+
+    const handleGoLive = async () => {
+        try {
+            await liveStreamService.createStream({
+                title: streamTitle || 'Untitled Stream',
+                category: category || 'General',
+                privacy: privacy,
+                ticketPrice: ticketPrice ? parseFloat(ticketPrice) : 0,
+            });
+            router.push(audioMode === 'camera' ? '/go-live-preview' : '/live-dashboard');
+        } catch (error) {
+            console.error('Failed to start stream', error);
+        }
     };
 
     return (
@@ -220,7 +235,7 @@ export default function GoLiveScreen() {
                     <TouchableOpacity
                         style={styles.goLiveBtn}
                         activeOpacity={0.85}
-                        onPress={() => router.push(audioMode === 'camera' ? '/go-live-preview' : '/live-dashboard')}
+                        onPress={handleGoLive}
                     >
                         <Text style={styles.goLiveBtnText}>
                             {audioMode === 'camera' ? 'Next' : 'Go LIVE'}

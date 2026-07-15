@@ -11,6 +11,11 @@ export const authService = {
     });
     const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
     if (token) {
+      console.log('\n\n======================================================');
+      console.log('✨ FRESH ACCESS TOKEN (Copy below this line):');
+      console.log(token);
+      console.log('======================================================\n\n');
+      
       store.dispatch(
         setCredentials({
           token,
@@ -30,6 +35,11 @@ export const authService = {
     });
     const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
     if (token) {
+      console.log('\n\n======================================================');
+      console.log('✨ FRESH ACCESS TOKEN (Copy below this line):');
+      console.log(token);
+      console.log('======================================================\n\n');
+
       store.dispatch(
         setCredentials({
           token,
@@ -41,17 +51,38 @@ export const authService = {
     return response.data;
   },
 
-  async signInWithSso(provider: string, providerUserId: string, email: string) {
+  /**
+   * Sign in with a real SSO provider token.
+   *
+   * Google  → pass the ID-token JWT as `token`  (field name: `credential`)
+   * Facebook → pass the access token as `token`  (field name: `accessToken`)
+   *
+   * For the full SSO signup+login flow use `ssoService` directly.
+   */
+  async signInWithSso(
+    provider: string,
+    token: string,
+  ) {
+    // Build the correct payload for each provider.
+    let providerPayload: Record<string, string>;
+    if (provider === 'facebook') {
+      providerPayload = { accessToken: token };
+    } else if (provider === 'apple') {
+      providerPayload = { identityToken: token };
+    } else {
+      // google (and any future OIDC provider)
+      providerPayload = { credential: token };
+    }
+
     const response = await apiClient.post('/auth/sign-in/sso', {
       provider,
-      providerUserId,
-      email,
+      ...providerPayload,
     });
-    const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
-    if (token) {
+    const accessToken = response.data?.access_token || response.data?.token || response.data?.accessToken;
+    if (accessToken) {
       store.dispatch(
         setCredentials({
-          token,
+          token: accessToken,
           user: response.data.user || {},
         })
       );
@@ -59,6 +90,7 @@ export const authService = {
     }
     return response.data;
   },
+
 
   async forgotPassword(email: string) {
     const response = await apiClient.post('/auth/forgot-password', { email });

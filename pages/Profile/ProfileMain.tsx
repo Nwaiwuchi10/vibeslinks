@@ -65,6 +65,13 @@ const menuItems = [
     route: '/profile/invite-friends',
     iconType: 'MaterialCommunityIcons',
   },
+  {
+    id: 'become-host',
+    title: 'Become a Host',
+    icon: 'star-outline',
+    route: '/become-host',
+    iconType: 'Ionicons',
+  },
 ];
 
 import { useAppSelector } from '@/store/hooks';
@@ -75,7 +82,14 @@ export default function ProfileMain() {
   const { user } = useAppSelector((state) => state.auth);
 
   const fullName = user?.fullName || user?.name || 'Vibez User';
-  const avatarUrl = user?.profilePictureUrl || user?.avatarUrl;
+  const username = user?.username ? `@${user.username}` : '';
+  const avatarUrl = user?.profilePictureUrl || user?.avatarUrl || null;
+  const initials = fullName
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
   const renderIcon = (item: any) => {
     if (item.iconType === 'Ionicons') {
@@ -104,18 +118,27 @@ export default function ProfileMain() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Avatar Section */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
-            <Image
-              source={avatarUrl ? { uri: avatarUrl } : require('@/assets/images/artist_event.png')}
-              style={styles.avatar}
-            />
-            <TouchableOpacity style={styles.editBadge}>
-              <Ionicons name="person-outline" size={16} color="#FFF" />
+            {avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.editBadge}
+              onPress={() => router.push('/profile/edit')}
+            >
+              <Ionicons name="pencil-outline" size={14} color="#FFF" />
             </TouchableOpacity>
           </View>
           <Text style={styles.userName}>{fullName}</Text>
+          {username ? <Text style={styles.userHandle}>{username}</Text> : null}
         </View>
 
         {/* Menu Items */}
@@ -274,6 +297,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
+    marginBottom: 2,
+  },
+  userHandle: {
+    fontSize: 14,
+    color: '#888',
+    fontWeight: '400',
+  },
+  avatarFallback: {
+    backgroundColor: '#8E2DE2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: '700',
   },
   menuContainer: {
     backgroundColor: '#FFF',

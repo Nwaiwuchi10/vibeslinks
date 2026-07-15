@@ -9,11 +9,38 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCreateEvent, TicketTier } from './CreateEventContext';
 
 const TICKET_TABS = ['General', 'VIP', 'VVIP'];
 
 const CreateEventStep3 = ({ onBack, onContinue }: { onBack: () => void, onContinue: () => void }) => {
   const [activeTab, setActiveTab] = useState('VVIP');
+  
+  const { updateEventData } = useCreateEvent();
+  
+  const [ticketName, setTicketName] = useState('');
+  const [price, setPrice] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [benefit1, setBenefit1] = useState('');
+  const [benefit2, setBenefit2] = useState('');
+  
+  const handleSaveAndContinue = () => {
+    const tierName = activeTab === 'General' ? 'General' : (ticketName || activeTab);
+    const parsedPrice = parseFloat(price) || 0;
+    const parsedCapacity = parseInt(capacity, 10) || 100;
+    const description = [benefit1, benefit2].filter(Boolean).join(', ');
+
+    const newTier: TicketTier = {
+      tierName,
+      currency: 'NGN',
+      price: parsedPrice,
+      description,
+      capacity: parsedCapacity
+    };
+
+    updateEventData({ ticketTiers: [newTier] });
+    onContinue();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -41,20 +68,49 @@ const CreateEventStep3 = ({ onBack, onContinue }: { onBack: () => void, onContin
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {activeTab !== 'General' && (
-           <TextInput placeholder="Ticket Name" style={styles.input} placeholderTextColor="#999" />
+           <TextInput 
+             placeholder="Ticket Name" 
+             style={styles.input} 
+             placeholderTextColor="#999" 
+             value={ticketName}
+             onChangeText={setTicketName}
+           />
         )}
-        <TextInput placeholder="Price" style={styles.input} keyboardType="numeric" placeholderTextColor="#999" />
-        <TextInput placeholder="Quantity" style={styles.input} keyboardType="numeric" placeholderTextColor="#999" />
+        <TextInput 
+          placeholder="Price" 
+          style={styles.input} 
+          keyboardType="numeric" 
+          placeholderTextColor="#999" 
+          value={price}
+          onChangeText={setPrice}
+        />
+        <TextInput 
+          placeholder="Quantity" 
+          style={styles.input} 
+          keyboardType="numeric" 
+          placeholderTextColor="#999" 
+          value={capacity}
+          onChangeText={setCapacity}
+        />
 
         <Text style={styles.sectionTitle}>Benefits</Text>
         <View style={styles.benefitInput}>
-           <TextInput placeholder="Text here" style={styles.innerInput} placeholderTextColor="#BBB" />
+           <TextInput 
+             placeholder="Benefit 1" 
+             style={styles.innerInput} 
+             placeholderTextColor="#BBB" 
+             value={benefit1}
+             onChangeText={setBenefit1}
+           />
         </View>
         <View style={styles.benefitInput}>
-           <TextInput placeholder="Text here" style={styles.innerInput} placeholderTextColor="#BBB" />
-        </View>
-        <View style={styles.benefitInput}>
-           <TextInput placeholder="Text here" style={styles.innerInput} placeholderTextColor="#BBB" />
+           <TextInput 
+             placeholder="Benefit 2" 
+             style={styles.innerInput} 
+             placeholderTextColor="#BBB" 
+             value={benefit2}
+             onChangeText={setBenefit2}
+           />
         </View>
 
         {activeTab === 'General' && (
@@ -73,7 +129,7 @@ const CreateEventStep3 = ({ onBack, onContinue }: { onBack: () => void, onContin
              {activeTab === 'General' ? 'Create New Ticket' : 'Add More Ticket'}
            </Text>
          </TouchableOpacity>
-         <TouchableOpacity style={styles.continueBtn} onPress={onContinue}>
+         <TouchableOpacity style={styles.continueBtn} onPress={handleSaveAndContinue}>
            <Text style={styles.continueText}>Save and continue</Text>
          </TouchableOpacity>
       </View>

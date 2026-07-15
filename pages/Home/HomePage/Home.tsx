@@ -8,16 +8,26 @@ import LiveCreators from './LiveCreators';
 import SocialFeed from './SocialFeed';
 import StoriesSection from './StoriesSection';
 import TrendingNearYou from './TrendingNearYou';
-import VibingEventPost from './VibingEventPost';
-import PhotoSocialPost from './PhotoSocialPost';
-import VideoSocialPost from './VideoSocialPost';
+import { useAppSelector } from '@/store/hooks';
 
 export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void }) {
+    // Read the logged-in user directly from Redux (populated at login/signup — no separate GET endpoint exists)
+    const authUser = useAppSelector((state) => state.auth.user);
+    const userAvatar = authUser?.profilePictureUrl || authUser?.avatarUrl || null;
+    const userName = authUser?.fullName || authUser?.name || authUser?.username || null;
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-            <HomeHeader onAddPress={onOpenStream} />
+            <HomeHeader
+                onAddPress={onOpenStream}
+                userAvatar={userAvatar}
+                userName={userName}
+            />
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
                 <StoriesSection />
                 <AdsBanner />
                 <TrendingNearYou />

@@ -19,6 +19,18 @@ export const eventService = {
     return response.data;
   },
 
+  async createLiveStream(data: {
+    title: string;
+    coverUrl: string;
+    category: string;
+    privacy: 'all' | 'ticket-holders-only' | 'invite-only';
+    ticketPrice?: number;
+  }) {
+    const response = await apiClient.post('/live-streams', data);
+    store.dispatch(showToast({ type: 'success', message: 'Livestream created successfully!' }));
+    return response.data;
+  },
+
   async getAllEvents() {
     store.dispatch(setLoadingEvents(true));
     try {

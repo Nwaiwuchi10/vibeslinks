@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
@@ -17,35 +18,42 @@ import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
 
 import { authService } from '@/services/authService';
-import { userService } from '@/services/userService';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
+import { useSocialAuth } from '@/hooks/useSocialAuth';
 
 export default function LoginScreen() {
   const dispatch = useAppDispatch();
   const [step, setStep] = useState<'social' | 'form'>('social');
   const [authMode, setAuthMode] = useState<'email' | 'phone'>('phone');
-  
+
   // form states
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [formLoading, setFormLoading] = useState(false);
+
+  // Real Google + Facebook OAuth hooks (login mode)
+  const {
+    promptGoogleSignIn,
+    promptFacebookSignIn,
+    loading: ssoLoading,
+  } = useSocialAuth({ mode: 'login' });
 
   const handleLogin = async () => {
     try {
+      setFormLoading(true);
       if (authMode === 'email') {
         if (!email || !password) {
           dispatch(showToast({ type: 'warning', message: 'Please fill in email and password.' }));
           return;
         }
-
         await authService.signIn(email, password);
       } else {
         if (!phone || !password) {
           dispatch(showToast({ type: 'warning', message: 'Please fill in phone and password.' }));
           return;
         }
-
         await authService.signInWithPhone(phone, '+234', password);
       }
 
@@ -53,20 +61,12 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (err) {
       // Errors are toasted by apiClient globally
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const handleSocialLogin = async (provider: 'google' | 'facebook' | 'apple') => {
-    try {
-      dispatch(showToast({ type: 'info', message: `Connecting with ${provider}...` }));
-      // In production, trigger SSO SDK then call authService.signInWithSso
-      // Mocking for integration completion
-      await authService.signInWithSso(provider, `mock-${provider}-id`, `user-${provider}@example.com`);
-      router.replace('/(tabs)');
-    } catch (err) {
-      // Errors toasted by apiClient
-    }
-  };
+  const isLoading = ssoLoading || formLoading;
 
   const renderSocial = () => (
     <View style={styles.contentContainer}>
@@ -80,28 +80,43 @@ export default function LoginScreen() {
           iconType="person"
           title="Use phone or email"
           onPress={() => setStep('form')}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="google"
           title="Continue with Google"
-          onPress={() => handleSocialLogin('google')}
+          onPress={promptGoogleSignIn}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="facebook"
           title="Continue with Facebook"
-          onPress={() => handleSocialLogin('facebook')}
+          onPress={promptFacebookSignIn}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() => handleSocialLogin('apple')}
+          onPress={() =>
+            dispatch(showToast({ type: 'info', message: 'Apple sign-in coming soon.' }))
+          }
+          disabled={isLoading}
         />
       </View>
 
-      <TouchableOpacity 
-        style={styles.loginButton} 
+      {isLoading && (
+        <ActivityIndicator
+          size="small"
+          color={Colors.primary}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      <TouchableOpacity
+        style={[styles.loginButton, isLoading && styles.buttonDisabled]}
         activeOpacity={0.88}
         onPress={() => setStep('form')}
+        disabled={isLoading}
       >
         <Text style={styles.loginButtonText}>Login</Text>
       </TouchableOpacity>
@@ -134,11 +149,11 @@ export default function LoginScreen() {
         </View>
 
         {authMode === 'email' ? (
-          <Input 
-            placeholder="Email Address" 
-            value={email} 
-            onChangeText={setEmail} 
-            keyboardType="email-address" 
+          <Input
+            placeholder="Email Address"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
           />
         ) : (
           <View style={styles.phoneInputRow}>
@@ -147,33 +162,41 @@ export default function LoginScreen() {
               <Ionicons name="chevron-down" size={16} color="#666" />
             </View>
             <View style={{ flex: 1 }}>
-              <Input 
-                placeholder="Phone Number" 
-                value={phone} 
-                onChangeText={setPhone} 
-                keyboardType="phone-pad" 
+              <Input
+                placeholder="Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
               />
             </View>
           </View>
         )}
 
-        <Input 
-          placeholder="Password" 
-          value={password} 
-          onChangeText={setPassword} 
-          isPassword 
+        <Input
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          isPassword
         />
         
-        <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/(auth)/reset-password')}>
+        <TouchableOpacity
+          style={styles.forgotPassword}
+          onPress={() => router.push('/(auth)/reset-password')}
+        >
           <Text style={styles.forgotPasswordText}>Forget password?</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.loginButton} 
+        <TouchableOpacity
+          style={[styles.loginButton, formLoading && styles.buttonDisabled]}
           activeOpacity={0.88}
           onPress={handleLogin}
+          disabled={formLoading}
         >
-          <Text style={styles.loginButtonText}>Login</Text>
+          {formLoading ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.loginButtonText}>Login</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -189,8 +212,8 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -224,7 +247,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   skipText: {
-    color: '#E0E0E0', 
+    color: '#E0E0E0',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -297,6 +320,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   loginButtonText: {
     color: '#FFF',

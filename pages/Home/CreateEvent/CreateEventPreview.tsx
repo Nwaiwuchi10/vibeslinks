@@ -8,12 +8,29 @@ import {
   Image,
   SafeAreaView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useCreateEvent } from './CreateEventContext';
 
 const { width } = Dimensions.get('window');
 
-const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPublish: () => void }) => {
+const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () => void, onPublish: () => void, isPublishing?: boolean }) => {
+  const { eventData } = useCreateEvent();
+  
+  // Format date helper
+  const formatDate = (isoStr: string) => {
+    if (!isoStr) return 'TBD';
+    const d = new Date(isoStr);
+    return `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`;
+  };
+
+  const formatTime = (isoStr: string) => {
+    if (!isoStr) return 'TBD';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -31,11 +48,13 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
           <Text style={styles.sectionTitle}>Ticket Type</Text>
           <View style={styles.typeCard}>
             <View style={styles.typeIconContainer}>
-              <MaterialCommunityIcons name="ticket-confirmation-outline" size={24} color="#8E2DE2" />
+              <MaterialCommunityIcons name={eventData.virtualEvent ? 'video-outline' : 'ticket-confirmation-outline'} size={24} color="#8E2DE2" />
             </View>
             <View style={{ flex: 1, marginLeft: 15 }}>
-              <Text style={styles.typeTitle}>Physical Event</Text>
-              <Text style={styles.typeDesc}>Host fans in person at a venue</Text>
+              <Text style={styles.typeTitle}>{eventData.virtualEvent ? 'Livestream Event' : 'Physical Event'}</Text>
+              <Text style={styles.typeDesc}>
+                {eventData.virtualEvent ? 'Host fans online via stream' : 'Host fans in person at a venue'}
+              </Text>
             </View>
             <View style={styles.radioOutter}>
               <View style={styles.radioInner} />
@@ -46,7 +65,7 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Event Title</Text>
           <View style={styles.infoBox}>
-            <Text style={styles.infoText}>AFRO VIBES FESTIVAL 2026</Text>
+            <Text style={styles.infoText}>{eventData.title || 'Untitled Event'}</Text>
           </View>
         </View>
 
@@ -54,7 +73,7 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
           <Text style={styles.sectionTitle}>Event Description</Text>
           <View style={styles.infoBox}>
             <Text style={styles.infoText}>
-              Experience the biggest Afrobeat nightlife event with live DJs, celebrity appearances, and exclusive performances.
+              {eventData.description || 'No description provided.'}
             </Text>
           </View>
         </View>
@@ -71,18 +90,18 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Time and Date</Text>
           <View style={styles.dateTimeBox}>
-            <View style={styles.infoBox}><Text style={styles.infoText}>29 / 05 / 2026</Text></View>
+            <View style={styles.infoBox}><Text style={styles.infoText}>{formatDate(eventData.startsAt)}</Text></View>
             <View style={styles.timeRow}>
               <View style={styles.timeBox}>
-                <Text style={styles.infoText}>9:00PM</Text>
+                <Text style={styles.infoText}>{formatTime(eventData.startsAt)}</Text>
                 <Ionicons name="time-outline" size={18} color="#8E2DE2" />
               </View>
               <View style={styles.timeBox}>
-                <Text style={styles.infoText}>4:00AM</Text>
+                <Text style={styles.infoText}>{formatTime(eventData.endsAt)}</Text>
                 <Ionicons name="time-outline" size={18} color="#8E2DE2" />
               </View>
             </View>
-            <View style={styles.infoBox}><Text style={styles.infoText}>West Africa time</Text></View>
+            <View style={styles.infoBox}><Text style={styles.infoText}>{eventData.timezone}</Text></View>
           </View>
         </View>
 
@@ -97,20 +116,36 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Event Venue</Text>
           <View style={styles.venueBox}>
-            <View style={styles.infoBox}><Text style={styles.infoText}>Jafa Hotel</Text></View>
-            <View style={styles.infoBox}><Text style={styles.infoText}>Awoyaya, Ibeju Lekki Lagos Nigeria</Text></View>
-            <View style={styles.infoBox}><Text style={[styles.infoText, { color: '#8E2DE2' }]}>https://maps.app.goo.gl/ezq7MN7PG8...</Text></View>
+            <View style={styles.infoBox}><Text style={styles.infoText}>{eventData.venue || 'No Venue specified'}</Text></View>
+            <View style={styles.infoBox}><Text style={styles.infoText}>{eventData.location || 'No Location specified'}</Text></View>
           </View>
         </View>
 
         <View style={styles.previewSection}>
-          <Text style={styles.sectionTitle}>Ticket Type</Text>
+          <Text style={styles.sectionTitle}>Ticket Types</Text>
           <View style={styles.ticketTypeBox}>
-            {['VIP', '20,000', 'Lounge access', 'Free drinks', 'Priority entry'].map((text, idx) => (
-              <View key={idx} style={styles.ticketInfoBox}>
-                <Text style={styles.infoText}>{text}</Text>
+            {eventData.ticketTiers.length > 0 ? (
+              eventData.ticketTiers.map((tier, idx) => (
+                <View key={idx} style={styles.ticketInfoBox}>
+                  <Text style={[styles.infoText, { fontWeight: '700', marginBottom: 5 }]}>{tier.tierName}</Text>
+                  <Text style={styles.infoText}>Price: {tier.price} {tier.currency}</Text>
+                  <Text style={styles.infoText}>Capacity: {tier.capacity}</Text>
+                  <Text style={styles.infoText}>Benefits: {tier.description}</Text>
+                </View>
+              ))
+            ) : eventData.virtualEvent ? (
+              <View style={styles.ticketInfoBox}>
+                <Text style={styles.infoText}>
+                  {eventData.liveStreamPrivacy === 'ticket-holders-only'
+                    ? `Ticket Price: ₦${eventData.liveStreamTicketPrice.toLocaleString()}`
+                    : eventData.liveStreamPrivacy === 'all' ? 'Public — Free to watch' : 'Invite Only'}
+                </Text>
               </View>
-            ))}
+            ) : (
+              <View style={styles.ticketInfoBox}>
+                <Text style={styles.infoText}>No tickets added.</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -121,8 +156,17 @@ const CreateEventPreview = ({ onBack, onPublish }: { onBack: () => void, onPubli
         <TouchableOpacity style={styles.draftBtn}>
           <Text style={[styles.btnText, { color: '#8E2DE2' }]}>Save Draft</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.publishBtn} onPress={onPublish}>
-          <Text style={[styles.btnText, { color: '#FFF' }]}>Publish Event</Text>
+        <TouchableOpacity
+          style={[styles.publishBtn, isPublishing && { opacity: 0.7 }]}
+          onPress={onPublish}
+          disabled={isPublishing}
+        >
+          {isPublishing
+            ? <ActivityIndicator color="#FFF" size="small" />
+            : <Text style={[styles.btnText, { color: '#FFF' }]}>
+                {eventData.virtualEvent ? 'Go Live' : 'Publish Event'}
+              </Text>
+          }
         </TouchableOpacity>
       </View>
     </SafeAreaView>

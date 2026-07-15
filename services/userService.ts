@@ -100,12 +100,22 @@ export const userService = {
     return (await apiClient.get('/users/me/onboarding')).data;
   },
 
-  async patchMyOnboarding(step: string, completed: boolean) {
+  async patchMyOnboarding(step: number, completed: boolean) {
+    // Backend expects step as a number (1–6), not a string.
     return (await apiClient.patch('/users/me/onboarding', { step, completed })).data;
   },
 
   async updateOnboardingData(data: any) {
     return (await apiClient.patch('/users/me/onboarding', data)).data;
+  },
+
+  async applyForHostRole(reason: string) {
+    const response = await apiClient.post('/users/role-upgrade-requests', {
+      requestedRole: 'host',
+      reason,
+    });
+    store.dispatch(showToast({ type: 'success', message: 'Host application submitted successfully!' }));
+    return response.data;
   },
 
   async followArtist(artistId: string) {

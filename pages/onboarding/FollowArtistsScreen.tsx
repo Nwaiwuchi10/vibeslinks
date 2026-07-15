@@ -73,10 +73,21 @@ export default function FollowArtistsScreen() {
         return;
       }
 
-      // Send follow request for each selected artist
-      await Promise.all(
-        selected.map((artistId) => userService.followArtist(artistId))
-      );
+      // Try to follow selected creators
+      try {
+        await Promise.all(
+          selected.map((artistId) => userService.followArtist(artistId))
+        );
+      } catch (followErr) {
+        console.warn('[FollowArtistsScreen] Follow failed:', followErr);
+      }
+
+      // Mark step 3 as completed on the backend (gracefully catch errors if backend 500s)
+      try {
+        await userService.patchMyOnboarding(3, true);
+      } catch (onboardingErr) {
+        console.warn('[FollowArtistsScreen] Patch onboarding step 3 failed:', onboardingErr);
+      }
 
       setShowModal(true);
     } catch (err) {
@@ -87,6 +98,19 @@ export default function FollowArtistsScreen() {
   const handleDone = () => {
     setShowModal(false);
     router.push('/(onboarding)/account-confirmed' as any);
+  };
+
+  const handleSkip = async () => {
+    try {
+      // Notify backend that step 3 is completed/skipped (gracefully catch errors if backend 500s)
+      try {
+        await userService.patchMyOnboarding(3, true);
+      } catch (onboardingErr) {
+        console.warn('[FollowArtistsScreen] Skip onboarding step 3 failed:', onboardingErr);
+      }
+    } finally {
+      router.push('/(onboarding)/account-confirmed' as any);
+    }
   };
 
   return (
@@ -145,7 +169,7 @@ export default function FollowArtistsScreen() {
 
         <TouchableOpacity 
           style={styles.skipButton} 
-          onPress={() => router.push('/(onboarding)/account-confirmed' as any)}
+          onPress={handleSkip}
         >
           <Text style={styles.skipButtonText}>Skip</Text>
         </TouchableOpacity>

@@ -7,9 +7,10 @@ interface SocialButtonProps {
   iconType: 'person' | 'google' | 'facebook' | 'apple';
   title: string;
   onPress: () => void;
+  disabled?: boolean;
 }
 
-export default function SocialButton({ iconType, title, onPress }: SocialButtonProps) {
+export default function SocialButton({ iconType, title, onPress, disabled = false }: SocialButtonProps) {
   const renderIcon = () => {
     switch (iconType) {
       case 'person':
@@ -26,7 +27,12 @@ export default function SocialButton({ iconType, title, onPress }: SocialButtonP
   };
 
   return (
-    <TouchableOpacity style={styles.button} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[styles.button, disabled && styles.buttonDisabled]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      disabled={disabled}
+    >
       <View style={styles.iconContainer}>
         {renderIcon()}
       </View>
@@ -51,6 +57,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
     shadowRadius: 4,
     elevation: 2,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   iconContainer: {
     width: 24,

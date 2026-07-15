@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
@@ -17,9 +18,9 @@ import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
 
 import { userService } from '@/services/userService';
-import { authService } from '@/services/authService';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
+import { useSocialAuth } from '@/hooks/useSocialAuth';
 
 export default function SignupScreen() {
   const dispatch = useAppDispatch();
@@ -28,8 +29,8 @@ export default function SignupScreen() {
   
   const [agreed, setAgreed] = useState(true);
   const [newsletter, setNewsletter] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
 
-  
   // form states
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -40,6 +41,13 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
 
+  // Real Google + Facebook OAuth hooks (signup mode)
+  const {
+    promptGoogleSignUp,
+    promptFacebookSignUp,
+    loading: ssoLoading,
+  } = useSocialAuth({ mode: 'signup' });
+
   const handleSendCode = async () => {
     try {
       const fullName = `${firstName} ${lastName}`.trim();
@@ -47,6 +55,8 @@ export default function SignupScreen() {
         dispatch(showToast({ type: 'warning', message: 'Please fill in all profile details and password.' }));
         return;
       }
+
+      setFormLoading(true);
 
       if (authMode === 'email') {
         if (!email) {
@@ -77,6 +87,8 @@ export default function SignupScreen() {
       }
     } catch (err) {
       // Errors handled globally by apiClient
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -91,21 +103,25 @@ export default function SignupScreen() {
         return;
       }
 
+      setFormLoading(true);
+
+      let verifyResult: any;
+
       if (authMode === 'email') {
-        await userService.verifyRegistration({
+        verifyResult = await userService.verifyRegistration({
           method: 'email',
           email,
           code,
         });
       } else {
-        await userService.verifyRegistration({
+        verifyResult = await userService.verifyRegistration({
           method: 'phone',
           phoneNumber: phone,
           code,
         });
       }
 
-      // Check if newsletter registration should be sent
+      // Subscribe to newsletter if requested
       if (newsletter) {
         try {
           await userService.updateSettings({
@@ -117,35 +133,17 @@ export default function SignupScreen() {
         }
       }
 
-      // Route to login screen
-      router.replace('/(auth)/login' as any);
-    } catch (err) {
-      // Errors handled globally by apiClient
-    }
-  };
-
-
-  const handleSocialRegister = async (provider: 'google' | 'facebook' | 'apple') => {
-    try {
-      if (!agreed) {
-        dispatch(showToast({ type: 'warning', message: 'You must agree to the Terms and Privacy Policy.' }));
-        return;
-      }
-      dispatch(showToast({ type: 'info', message: `Registering with ${provider}...` }));
-      await userService.register({
-        method: provider,
-        fullName: 'Vibez User',
-        username: `user_${provider}_${Math.floor(Math.random() * 1000)}`,
-        email: `user.${provider}@example.com`,
-        acceptedTerms: agreed,
-        providerUserId: `mock-${provider}-id`,
-      });
+      // After signup verification, always navigate to the interests onboarding page.
+      // The backend returns `access_token` on verify — already stored by userService.
       router.replace('/(onboarding)/interests' as any);
     } catch (err) {
-      // Errors toasted by apiClient
+      // Errors handled globally by apiClient
+    } finally {
+      setFormLoading(false);
     }
   };
 
+  const isLoading = ssoLoading || formLoading;
 
   const renderSocial = () => (
     <View style={styles.contentContainer}>
@@ -159,23 +157,49 @@ export default function SignupScreen() {
           iconType="person"
           title="Use phone or email"
           onPress={() => setStep('form')}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="google"
           title="Continue with Google"
-          onPress={() => handleSocialRegister('google')}
+          onPress={() => {
+            if (!agreed) {
+              dispatch(showToast({ type: 'warning', message: 'You must agree to the Terms and Privacy Policy.' }));
+              return;
+            }
+            promptGoogleSignUp();
+          }}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="facebook"
           title="Continue with Facebook"
-          onPress={() => handleSocialRegister('facebook')}
+          onPress={() => {
+            if (!agreed) {
+              dispatch(showToast({ type: 'warning', message: 'You must agree to the Terms and Privacy Policy.' }));
+              return;
+            }
+            promptFacebookSignUp();
+          }}
+          disabled={isLoading}
         />
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() => handleSocialRegister('apple')}
+          onPress={() =>
+            dispatch(showToast({ type: 'info', message: 'Apple sign-up coming soon.' }))
+          }
+          disabled={isLoading}
         />
       </View>
+
+      {isLoading && (
+        <ActivityIndicator
+          size="small"
+          color={Colors.primary}
+          style={{ marginBottom: 12 }}
+        />
+      )}
 
       <TouchableOpacity
         style={styles.checkboxContainer}
@@ -186,7 +210,7 @@ export default function SignupScreen() {
           {agreed && <Ionicons name="checkmark" size={14} color="#FFF" />}
         </View>
         <Text style={styles.checkboxText}>
-          By continuing, you agree to our Terms & Privacy Policy.
+          By continuing, you agree to our Terms &amp; Privacy Policy.
         </Text>
       </TouchableOpacity>
 
@@ -221,11 +245,11 @@ export default function SignupScreen() {
         </View>
 
         {authMode === 'email' ? (
-          <Input 
-            placeholder="Email Address" 
-            value={email} 
-            onChangeText={setEmail} 
-            keyboardType="email-address" 
+          <Input
+            placeholder="Email Address"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
           />
         ) : (
           <View style={styles.phoneInputRow}>
@@ -234,38 +258,40 @@ export default function SignupScreen() {
               <Ionicons name="chevron-down" size={16} color="#666" />
             </View>
             <View style={{ flex: 1 }}>
-              <Input 
-                placeholder="Phone Number" 
-                value={phone} 
-                onChangeText={setPhone} 
-                keyboardType="phone-pad" 
+              <Input
+                placeholder="Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
               />
             </View>
           </View>
         )}
 
-        <Input 
-          placeholder="Password" 
-          value={password} 
-          onChangeText={setPassword} 
-          isPassword 
+        <Input
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          isPassword
         />
         
-        <Input 
-          placeholder="Confirm Password" 
-          value={confirmPassword} 
-          onChangeText={setConfirmPassword} 
-          isPassword 
+        <Input
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          isPassword
         />
 
-        <Input 
-          placeholder="Enter 6 digit code" 
-          value={code} 
-          onChangeText={setCode} 
+        <Input
+          placeholder="Enter 6 digit code"
+          value={code}
+          onChangeText={setCode}
           keyboardType="number-pad"
           rightElement={
-            <TouchableOpacity onPress={handleSendCode}>
-              <Text style={styles.sendCodeText}>Send code</Text>
+            <TouchableOpacity onPress={handleSendCode} disabled={formLoading}>
+              <Text style={styles.sendCodeText}>
+                {formLoading ? 'Sending...' : 'Send code'}
+              </Text>
             </TouchableOpacity>
           }
         />
@@ -283,12 +309,17 @@ export default function SignupScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.verifyButton} 
+        <TouchableOpacity
+          style={[styles.verifyButton, formLoading && styles.buttonDisabled]}
           activeOpacity={0.88}
           onPress={handleVerify}
+          disabled={formLoading}
         >
-          <Text style={styles.verifyButtonText}>Verify</Text>
+          {formLoading ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.verifyButtonText}>Verify</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -304,8 +335,8 @@ export default function SignupScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -339,7 +370,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   skipText: {
-    color: '#E0E0E0', 
+    color: '#E0E0E0',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -445,6 +476,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   verifyButtonText: {
     color: '#FFF',

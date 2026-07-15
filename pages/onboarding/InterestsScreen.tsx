@@ -32,8 +32,18 @@ const INTERESTS: Interest[] = [
   { id: '9', name: 'Sports Events', icon: 'football', family: 'Ionicons' },
 ];
 
+import { store } from '@/store';
+
 export default function InterestsScreen() {
   const [selected, setSelected] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    const token = store.getState().auth?.token;
+    console.log('\n====================================');
+    console.log('ACTIVE USER JWT ACCESS TOKEN:');
+    console.log(token);
+    console.log('====================================\n');
+  }, []);
 
   const toggleInterest = (id: string) => {
     if (selected.includes(id)) {
@@ -57,7 +67,7 @@ export default function InterestsScreen() {
       });
 
       // Mark the interests onboarding step as completed
-      await userService.patchMyOnboarding('interests', true);
+      await userService.patchMyOnboarding(1, true);
 
       router.push('/(onboarding)/location' as any);
     } catch (err: any) {

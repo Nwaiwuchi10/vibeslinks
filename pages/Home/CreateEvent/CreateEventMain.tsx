@@ -1,123 +1,160 @@
 import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import CreateEventStep1 from './CreateEventStep1';
-import CreateEventStep2 from './CreateEventStep2';
-import CreateEventStep3 from './CreateEventStep3';
-import CreateEventPreview from './CreateEventPreview';
-import CreateEventStep4 from './CreateEventStep4';
-import CreateEventDatePicker from './CreateEventDatePicker';
+import CreateEventStep2Physical from './CreateEventStep2';
 
 import { eventService } from '@/services/eventService';
+import { CreateEventProvider, useCreateEvent } from './CreateEventContext';
+import CreateEventDatePicker from './CreateEventDatePicker';
+import CreateEventPreview from './CreateEventPreview';
+import CreateEventStep2Livestream from './CreateEventStep2Livestream';
+import CreateEventStep3 from './CreateEventStep3';
+import CreateEventStep4 from './CreateEventStep4';
 
-type CreateEventState = 'type_selection' | 'details' | 'tickets' | 'preview' | 'published' | 'date_picker';
+type WizardStep = 'type_selection' | 'details' | 'tickets' | 'preview' | 'published' | 'date_picker';
 
-const CreateEventMain = ({ onFinish }: { onFinish: () => void }) => {
-  const [state, setState] = useState<CreateEventState>('type_selection');
-  const [prevState, setPrevState] = useState<CreateEventState>('type_selection');
+const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
+  const [step, setStep] = useState<WizardStep>('type_selection');
+  const [prevStep, setPrevStep] = useState<WizardStep>('type_selection');
+  const [isPublishing, setIsPublishing] = useState(false);
 
+  const { eventData, updateEventData } = useCreateEvent();
 
+  // ── Navigation helpers ────────────────────────────────────────────────────
   const handleBack = () => {
-    if (state === 'type_selection') {
+    if (step === 'type_selection') {
       onFinish();
-    } else if (state === 'details') {
-      setState('type_selection');
-    } else if (state === 'tickets') {
-      setState('details');
-    } else if (state === 'preview') {
-      setState('tickets');
-    } else if (state === 'date_picker') {
-      setState(prevState);
+    } else if (step === 'details') {
+      setStep('type_selection');
+    } else if (step === 'tickets') {
+      setStep('details');
+    } else if (step === 'preview') {
+      // Livestreams skip tickets → go back to details
+      setStep(eventData.virtualEvent ? 'details' : 'tickets');
+    } else if (step === 'date_picker') {
+      setStep(prevStep);
     }
   };
 
   const handleContinueFromStep1 = (type: 'physical' | 'livestream') => {
-    setState('details');
+    updateEventData({ virtualEvent: type === 'livestream' });
+    setStep('details');
   };
 
   const handleContinueFromStep2 = () => {
-    setState('tickets');
-  };
-
-  const handleOpenDatePicker = () => {
-    setPrevState(state);
-    setState('date_picker');
-  };
-
-  const handleConfirmDate = () => {
-    setState(prevState);
-  };
-
-  const handleContinueFromStep3 = () => {
-    setState('preview');
-  };
-
-  const handlePublish = async () => {
-    try {
-      await eventService.createEvent({
-        title: 'AFRO VIBES FESTIVAL 2026',
-        imageUrl: 'https://images.unsplash.com/photo-1571008887538-b36bb32f4571?w=600',
-        description: 'Experience the biggest Afrobeat nightlife event with live DJs, celebrity appearances, and exclusive performances.',
-        category: 'concert',
-        virtualEvent: false,
-        location: 'Awoyaya, Ibeju Lekki Lagos Nigeria',
-        venue: 'Jafa Hotel',
-        venueLocation: {
-          address: 'Awoyaya, Ibeju Lekki',
-          city: 'Lagos',
-          country: 'Nigeria',
-          latitude: 6.4474,
-          longitude: 3.4553,
-        },
-        startDateTime: new Date('2026-05-29T21:00:00.000Z').toISOString(),
-        endDateTime: new Date('2026-05-30T04:00:00.000Z').toISOString(),
-        timezone: 'Africa/Lagos',
-        totalCapacity: 5000,
-        ticketPricingTiers: [
-          {
-            tierName: 'VIP',
-            currency: 'NGN',
-            price: 20, // ₦20,000 represented in backend base or normal price format
-            description: 'Lounge access, Free drinks, Priority entry',
-            capacity: 500,
-          }
-        ],
-        publish: true,
-      });
-      setState('published');
-    } catch (err) {
-      // apiClient handles toasts
+    // Livestreams don't need ticket-tier setup — go straight to preview
+    if (eventData.virtualEvent) {
+      setStep('preview');
+    } else {
+      setStep('tickets');
     }
   };
 
+  const handleOpenDatePicker = () => {
+    setPrevStep(step);
+    setStep('date_picker');
+  };
+
+  const handleConfirmDate = () => {
+    setStep(prevStep);
+  };
+
+  const handleContinueFromStep3 = () => {
+    setStep('preview');
+  };
+
+  // ── Publish — routes to correct API endpoint based on type ─────────────────
+  const handlePublish = async () => {
+    if (isPublishing) return;
+    setIsPublishing(true);
+    try {
+      if (eventData.virtualEvent) {
+        // POST /live-streams
+        await eventService.createLiveStream({
+          title: eventData.title,
+          coverUrl: eventData.imageUrl,
+          category: eventData.category,
+          privacy: eventData.liveStreamPrivacy,
+          ticketPrice: eventData.liveStreamTicketPrice > 0 ? eventData.liveStreamTicketPrice : undefined,
+        });
+      } else {
+        // POST /events  — map context fields → exact API fields
+        const payload = {
+          title: eventData.title,
+          description: eventData.description,
+          category: eventData.category,
+          imageUrl: eventData.imageUrl,
+          eventPosterUrl: eventData.imageUrl,
+          location: eventData.location,
+          venue: eventData.venue,
+          venueLocation: {
+            name: eventData.venueLocation.name || eventData.venue,
+            address: eventData.venueLocation.address || eventData.location,
+            mapUrl: eventData.venueLocation.mapUrl || '',
+            latitude: eventData.venueLocation.latitude,
+            longitude: eventData.venueLocation.longitude,
+          },
+          virtualEvent: false,
+          startsAt: eventData.startsAt,
+          endsAt: eventData.endsAt,
+          timezone: eventData.timezone,
+          totalCapacity: eventData.totalCapacity,
+          tags: eventData.tags,
+          dressCode: eventData.dressCode || undefined,
+          ageRestriction: eventData.ageRestriction || undefined,
+          refundPolicy: eventData.refundPolicy || undefined,
+          ticketTiers: eventData.ticketTiers,
+          artistes: [],
+          sponsors: [],
+          faqs: [],
+        };
+        await eventService.createEvent(payload);
+      }
+      setStep('published');
+    } catch (err) {
+      // Toast handled by apiClient interceptor
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
-      {state === 'type_selection' && (
+      {step === 'type_selection' && (
         <CreateEventStep1 onBack={handleBack} onContinue={handleContinueFromStep1} />
       )}
-      {state === 'details' && (
-        <CreateEventStep2 onBack={handleBack} onContinue={handleContinueFromStep2} onOpenDatePicker={handleOpenDatePicker} />
+      {step === 'details' && !eventData.virtualEvent && (
+        <CreateEventStep2Physical onBack={handleBack} onContinue={handleContinueFromStep2} onOpenDatePicker={handleOpenDatePicker} />
       )}
-      {state === 'tickets' && (
+      {step === 'details' && eventData.virtualEvent && (
+        <CreateEventStep2Livestream onBack={handleBack} onContinue={handleContinueFromStep2} />
+      )}
+      {step === 'tickets' && (
         <CreateEventStep3 onBack={handleBack} onContinue={handleContinueFromStep3} />
       )}
-      {state === 'preview' && (
-        <CreateEventPreview onBack={handleBack} onPublish={handlePublish} />
+      {step === 'preview' && (
+        <CreateEventPreview onBack={handleBack} onPublish={handlePublish} isPublishing={isPublishing} />
       )}
-      {state === 'published' && (
+      {step === 'published' && (
         <CreateEventStep4 onHome={onFinish} />
       )}
-      {state === 'date_picker' && (
+      {step === 'date_picker' && (
         <CreateEventDatePicker onBack={handleBack} onConfirm={handleConfirmDate} />
       )}
     </View>
   );
 };
 
+const CreateEventMain = ({ onFinish }: { onFinish: () => void }) => {
+  return (
+    <CreateEventProvider>
+      <CreateEventInner onFinish={onFinish} />
+    </CreateEventProvider>
+  );
+};
+
 export default CreateEventMain;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
 });

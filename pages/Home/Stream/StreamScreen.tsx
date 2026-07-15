@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   Image,
   SafeAreaView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { liveStreamService } from '@/services/liveStreamService';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +44,25 @@ const STREAM_FEED = [
 ];
 
 const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCreateEventPress: () => void }) => {
+  const [feed, setFeed] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFeed = async () => {
+      try {
+        const data = await liveStreamService.getWatchFeed();
+        setFeed(data?.items || data || []);
+      } catch (error) {
+        console.error('Failed to fetch stream feed:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFeed();
+  }, []);
+
+  const displayFeed = feed.length > 0 ? feed : STREAM_FEED;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -99,24 +120,31 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
         </TouchableOpacity>
 
         {/* Feed */}
-        {STREAM_FEED.map((post) => (
-          <TouchableOpacity key={post.id} style={styles.feedCard} activeOpacity={0.92} onPress={() => router.push('/live-details')}>
-            <Image source={post.image} style={styles.feedImage} />
-            <View style={styles.cardHeader}>
-              <View style={styles.userInfo}>
-                <Image source={{ uri: post.avatar }} style={styles.userAvatar} />
-                <Text style={styles.userName}>{post.user}</Text>
-                <View style={styles.likeInfo}>
-                  <Ionicons name="heart" size={12} color="#FFF" />
-                  <Text style={styles.likeText}>{post.likes}</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#8E2DE2" style={{ marginTop: 40 }} />
+        ) : (
+          displayFeed.map((post: any, index: number) => {
+            const isMock = post.id === '1' || post.id === '2'; // Simple check to see if it's our mock data
+            return (
+              <TouchableOpacity key={post.id || index} style={styles.feedCard} activeOpacity={0.92} onPress={() => router.push({ pathname: '/live-details', params: { id: post.id } })}>
+                <Image source={isMock ? post.image : { uri: post.coverUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819' }} style={styles.feedImage} />
+                <View style={styles.cardHeader}>
+                  <View style={styles.userInfo}>
+                    <Image source={{ uri: isMock ? post.avatar : (post.hostAvatar || 'https://i.pravatar.cc/100') }} style={styles.userAvatar} />
+                    <Text style={styles.userName}>{isMock ? post.user : (post.hostName || 'Creator')}</Text>
+                    <View style={styles.likeInfo}>
+                      <Ionicons name="eye" size={12} color="#FFF" />
+                      <Text style={styles.likeText}>{isMock ? post.likes : (post.viewerCount || 0)}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.typeBadge, { backgroundColor: (isMock ? post.type === 'Paid' : post.ticketPrice > 0) ? '#8E2DE2' : '#7F36FF' }]}>
+                    <Text style={styles.typeText}>{(isMock ? post.type : (post.ticketPrice > 0 ? 'Paid' : 'Free'))}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={[styles.typeBadge, { backgroundColor: post.type === 'Paid' ? '#8E2DE2' : '#7F36FF' }]}>
-                <Text style={styles.typeText}>{post.type}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+              </TouchableOpacity>
+            );
+          })
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
