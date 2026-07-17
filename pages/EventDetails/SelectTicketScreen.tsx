@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     Modal,
@@ -7,54 +7,84 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { eventService } from '@/services/eventService';
+import { useDispatch } from 'react-redux';
+import { setBookingInfo } from '@/store/slices/eventSlice';
 
 const { width } = Dimensions.get('window');
 
-const TICKETS = [
-    {
-        id: 'general',
-        name: 'General',
-        perks: ['Priority entry'],
-        price: '₦80,000',
-        priceLabel: '₦80,000 /Person',
-    },
-    {
-        id: 'vip',
-        name: 'VIP',
-        perks: ['Lounge access', 'Free drinks', 'Priority entry'],
-        price: '₦150,000',
-        priceLabel: '₦150,000 /Person',
-    },
-    {
-        id: 'vvip',
-        name: 'VVIP',
-        perks: ['Backstage access', 'Meet artists', 'Premium seating'],
-        price: '₦260,000',
-        priceLabel: '₦260,000 /Person',
-    },
-];
-
 export default function SelectTicketScreen() {
-    const [selected, setSelected] = useState<string[]>(['general', 'vvip']);
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const dispatch = useDispatch();
+    const [loading, setLoading] = useState(true);
+    const [ticketTiers, setTicketTiers] = useState<any[]>([]);
+    const [selected, setSelected] = useState<string[]>([]);
     const [showSeatsModal, setShowSeatsModal] = useState(false);
-    const [seats, setSeats] = useState({ general: 9, vvip: 3 });
+    const [seats, setSeats] = useState<{ [tierId: string]: number }>({});
 
-    const toggleSelect = (id: string) => {
-        setSelected(prev =>
-            prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-        );
+    useEffect(() => {
+        if (!id) return;
+        async function fetchCheckout() {
+            try {
+                setLoading(true);
+                const data = await eventService.getTicketCheckoutScreen(id!);
+                setTicketTiers(data.ticketTiers || []);
+                // Default select the first tier
+                if (data.ticketTiers && data.ticketTiers.length > 0) {
+                    const firstId = data.ticketTiers[0].id;
+                    setSelected([firstId]);
+                    setSeats({ [firstId]: 1 });
+                }
+            } catch (err) {
+                console.warn('[SelectTicketScreen] Fetch checkout failed:', err);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchCheckout();
+    }, [id]);
+
+    const toggleSelect = (tierId: string) => {
+        setSelected(prev => {
+            const isSelected = prev.includes(tierId);
+            const next = isSelected ? prev.filter(s => s !== tierId) : [...prev, tierId];
+            
+            // Adjust seats state
+            setSeats(prevSeats => {
+                const nextSeats = { ...prevSeats };
+                if (isSelected) {
+                    delete nextSeats[tierId];
+                } else {
+                    nextSeats[tierId] = 1;
+                }
+                return nextSeats;
+            });
+            
+            return next;
+        });
     };
 
-    const changeSeats = (type: 'general' | 'vvip', delta: number) => {
+    const changeSeats = (tierId: string, delta: number) => {
+        const tier = ticketTiers.find(t => t.id === tierId);
+        const maxCapacity = tier && typeof tier.remaining === 'number' ? tier.remaining : 10;
         setSeats(prev => ({
             ...prev,
-            [type]: Math.max(0, prev[type] + delta),
+            [tierId]: Math.min(maxCapacity, Math.max(1, (prev[tierId] || 1) + delta)),
         }));
     };
+
+    if (loading) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' }}>
+                <ActivityIndicator size="large" color="#8E2DE2" />
+            </View>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -70,14 +100,14 @@ export default function SelectTicketScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {/* 2-column grid */}
                 <View style={styles.ticketGrid}>
-                    {TICKETS.map((ticket) => {
+                    {ticketTiers.map((ticket) => {
                         const isSelected = selected.includes(ticket.id);
                         return (
                             <TouchableOpacity
                                 key={ticket.id}
                                 style={[
                                     styles.ticketCard,
-                                    ticket.id === 'vvip' && styles.ticketCardFull,
+                                    ticketTiers.length === 1 && styles.ticketCardFull,
                                     isSelected && styles.ticketCardSelected,
                                 ]}
                                 onPress={() => toggleSelect(ticket.id)}
@@ -93,7 +123,7 @@ export default function SelectTicketScreen() {
                                 {/* Icon */}
                                 <View style={[styles.ticketIconBox, isSelected && styles.ticketIconBoxSelected]}>
                                     <MaterialCommunityIcons
-                                        name="ticket-outline"
+                                        name="ticket-confirmation-outline"
                                         size={28}
                                         color={isSelected ? '#8E2DE2' : '#AAA'}
                                     />
@@ -101,21 +131,19 @@ export default function SelectTicketScreen() {
 
                                 <Text style={styles.ticketName}>{ticket.name}</Text>
 
-                                {/* Perks */}
+                                {/* Perks / description */}
                                 <View style={styles.perksBox}>
-                                    {ticket.perks.map((perk, i) =>
-                                        ticket.perks.length === 1 ? (
-                                            <View key={i} style={styles.perkPill}>
-                                                <Text style={styles.perkPillText}>{perk}</Text>
-                                            </View>
-                                        ) : (
+                                    {ticket.benefits && ticket.benefits.length > 0 ? (
+                                        ticket.benefits.map((perk: string, i: number) => (
                                             <Text key={i} style={styles.perkBullet}>• {perk}</Text>
-                                        )
+                                        ))
+                                    ) : (
+                                        <Text style={styles.perkBullet}>• {ticket.description || 'General Entry'}</Text>
                                     )}
                                 </View>
 
                                 <Text style={[styles.ticketPrice, isSelected && styles.ticketPriceSelected]}>
-                                    {ticket.priceLabel}
+                                    {ticket.priceText || `${ticket.currency || 'NGN'} ${ticket.price}`} /Person
                                 </Text>
                             </TouchableOpacity>
                         );
@@ -128,11 +156,12 @@ export default function SelectTicketScreen() {
             {/* Bottom CTA */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
-                    style={styles.ctaBtn}
-                    onPress={() => setShowSeatsModal(true)}
+                    style={[styles.ctaBtn, selected.length === 0 && { opacity: 0.5 }]}
+                    onPress={() => selected.length > 0 && setShowSeatsModal(true)}
                     activeOpacity={0.85}
+                    disabled={selected.length === 0}
                 >
-                    <Text style={styles.ctaBtnText}>Number of  Seats  →</Text>
+                    <Text style={styles.ctaBtnText}>Number of Seats →</Text>
                 </TouchableOpacity>
             </View>
 
@@ -146,34 +175,49 @@ export default function SelectTicketScreen() {
                 <View style={styles.modalOverlay}>
                     <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowSeatsModal(false)} />
                     <View style={styles.seatsSheet}>
-                        <Text style={styles.seatsTitle}>Number of  Seats</Text>
+                        <Text style={styles.seatsTitle}>Number of Seats</Text>
 
-                        {(['general', 'vvip'] as const).map(type => (
-                            <View key={type} style={styles.seatRow}>
-                                <Text style={styles.seatLabel}>{type === 'general' ? 'General' : 'VVIP'}</Text>
-                                <View style={styles.counterRow}>
-                                    <TouchableOpacity
-                                        style={styles.counterBtnMinus}
-                                        onPress={() => changeSeats(type, -1)}
-                                    >
-                                        <Ionicons name="remove" size={18} color="#888" />
-                                    </TouchableOpacity>
-                                    <Text style={styles.counterValue}>{seats[type]}</Text>
-                                    <TouchableOpacity
-                                        style={styles.counterBtnPlus}
-                                        onPress={() => changeSeats(type, 1)}
-                                    >
-                                        <Ionicons name="add" size={18} color="#FFF" />
-                                    </TouchableOpacity>
+                        {selected.map(tierId => {
+                            const tier = ticketTiers.find(t => t.id === tierId);
+                            if (!tier) return null;
+                            return (
+                                <View key={tierId} style={styles.seatRow}>
+                                    <Text style={styles.seatLabel}>{tier.name}</Text>
+                                    <View style={styles.counterRow}>
+                                        <TouchableOpacity
+                                            style={styles.counterBtnMinus}
+                                            onPress={() => changeSeats(tierId, -1)}
+                                        >
+                                            <Ionicons name="remove" size={18} color="#888" />
+                                        </TouchableOpacity>
+                                        <Text style={styles.counterValue}>{seats[tierId] || 1}</Text>
+                                        <TouchableOpacity
+                                            style={styles.counterBtnPlus}
+                                            onPress={() => changeSeats(tierId, 1)}
+                                        >
+                                            <Ionicons name="add" size={18} color="#FFF" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                            </View>
-                        ))}
+                            );
+                        })}
 
                         <TouchableOpacity
                             style={styles.selectBtn}
                             onPress={() => {
                                 setShowSeatsModal(false);
-                                router.push('/book-ticket');
+                                dispatch(setBookingInfo({
+                                    eventId: id,
+                                    selectedTiers: seats,
+                                    buyer: {
+                                        fullName: '',
+                                        email: '',
+                                        phoneNumber: '',
+                                        gender: 'Male',
+                                        country: 'Nigeria',
+                                    }
+                                }));
+                                router.push({ pathname: '/book-ticket', params: { id } });
                             }}
                             activeOpacity={0.85}
                         >

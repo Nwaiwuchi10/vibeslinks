@@ -9,12 +9,91 @@ import {
     View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator } from 'react-native';
+
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { setLastPurchase } from '@/store/slices/eventSlice';
+import { eventService } from '@/services/eventService';
 
 export default function TicketSummaryScreen() {
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const dispatch = useDispatch();
     const [showPayment, setShowPayment] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
+    const [isPaying, setIsPaying] = useState(false);
+
+    const bookingInfo = useSelector((state: RootState) => state.event.bookingInfo);
+    const event = useSelector((state: RootState) => state.event.currentEvent);
+
+    if (!bookingInfo || !event) {
+        return (
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text>No booking in progress.</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    const ticketTiers = event.ticketTiers || event.ticketCards?.tickets || [];
+    const selectedTierIds = Object.keys(bookingInfo.selectedTiers);
+
+    // Dynamic event details mapping
+    const eventImage = event.hero?.imageUrl || event.imageUrl || event.eventPosterUrl || '';
+    const eventTitle = event.summary?.title || event.title || 'Untitled Event';
+    const eventCategory = event.summary?.categoryLabel || event.category || 'Event';
+    const eventLocation = event.summary?.locationText || event.location || 'TBD';
+
+    // Compute prices
+    let subtotal = 0;
+    const itemsList: any[] = [];
+    selectedTierIds.forEach(tierId => {
+        const tier = ticketTiers.find((t: any) => t.id === tierId);
+        const qty = bookingInfo.selectedTiers[tierId] || 0;
+        if (tier && qty > 0) {
+            const price = tier.price || parseFloat(tier.priceText?.replace(/[^0-9]/g, '')) || 0;
+            const itemTotal = price * qty;
+            subtotal += itemTotal;
+            itemsList.push({
+                tierId,
+                name: tier.name || tier.label || 'Ticket',
+                quantity: qty,
+                priceText: tier.priceText || `₦${price.toLocaleString()}`,
+                totalText: `₦${itemTotal.toLocaleString()}`
+            });
+        }
+    });
+
+    const fee = Math.round(subtotal * 0.035); // 3.5% fee
+    const total = subtotal + fee;
+
+    const handlePay = async () => {
+        if (isPaying) return;
+        setIsPaying(true);
+        try {
+            const payload = {
+                items: selectedTierIds.map(tierId => ({
+                    tierId,
+                    quantity: bookingInfo.selectedTiers[tierId],
+                })),
+                paymentMethod: paymentMethod === 'card' ? 'stripe-card' : 'bank-transfer',
+                buyer: bookingInfo.buyer,
+            };
+
+            const res = await eventService.purchaseTickets(id || event.id, payload);
+            dispatch(setLastPurchase(res));
+            setShowPayment(false);
+            router.push('/booking-success');
+        } catch (err) {
+            console.warn('[TicketSummaryScreen] Purchase failed:', err);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
             {/* Header */}
@@ -30,17 +109,17 @@ export default function TicketSummaryScreen() {
                 {/* Event Info Card */}
                 <View style={styles.eventCard}>
                     <Image
-                        source={{ uri: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=300' }}
+                        source={eventImage ? { uri: eventImage } : require('../../assets/images/burna_boy.png')}
                         style={styles.eventImage}
                     />
                     <View style={styles.eventInfo}>
                         <View style={styles.categoryBadge}>
-                            <Text style={styles.categoryText}>COMEDY</Text>
+                            <Text style={styles.categoryText}>{eventCategory.toUpperCase()}</Text>
                         </View>
-                        <Text style={styles.eventName}>Paint With Mimi, &...</Text>
+                        <Text style={styles.eventName}>{eventTitle}</Text>
                         <View style={styles.locationRow}>
                             <Ionicons name="location" size={13} color="#8E2DE2" />
-                            <Text style={styles.locationText}>Lekki Ikata, Lagos</Text>
+                            <Text style={styles.locationText}>{eventLocation}</Text>
                         </View>
                     </View>
                 </View>
@@ -52,15 +131,15 @@ export default function TicketSummaryScreen() {
                 <View style={styles.infoSection}>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Full Name</Text>
-                        <Text style={styles.infoValue}>Roland Emmanuel</Text>
+                        <Text style={styles.infoValue}>{bookingInfo.buyer.fullName}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Phone Number</Text>
-                        <Text style={styles.infoValue}>234 9384058382</Text>
+                        <Text style={styles.infoValue}>{bookingInfo.buyer.phoneNumber}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Email</Text>
-                        <Text style={styles.infoValue} numberOfLines={1}>rolandemmanuell03@gmai.com</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>{bookingInfo.buyer.email}</Text>
                     </View>
                 </View>
 
@@ -68,17 +147,15 @@ export default function TicketSummaryScreen() {
 
                 {/* Ticket Breakdown */}
                 <View style={styles.infoSection}>
+                    {itemsList.map((item, idx) => (
+                        <View key={idx} style={styles.infoRow}>
+                            <Text style={styles.infoLabel}>{item.quantity.toString().padStart(2, '0')} {item.name} Ticket</Text>
+                            <Text style={styles.infoValue}>{item.totalText}</Text>
+                        </View>
+                    ))}
                     <View style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>09 General Ticket</Text>
-                        <Text style={styles.infoValue}>₦720,000</Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>03 VVIP Ticket</Text>
-                        <Text style={styles.infoValue}>₦780,000</Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>Fees</Text>
-                        <Text style={styles.infoValue}>$3.5</Text>
+                        <Text style={styles.infoLabel}>Fees (3.5%)</Text>
+                        <Text style={styles.infoValue}>₦{fee.toLocaleString()}</Text>
                     </View>
                 </View>
 
@@ -88,19 +165,19 @@ export default function TicketSummaryScreen() {
                 <View style={styles.infoSection}>
                     <View style={styles.infoRow}>
                         <Text style={styles.totalLabel}>Total</Text>
-                        <Text style={styles.totalValue}>₦1,680,000</Text>
+                        <Text style={styles.totalValue}>₦{total.toLocaleString()}</Text>
                     </View>
                 </View>
 
                 <View style={styles.divider} />
 
-                {/* Payment Method */}
+                {/* Payment Method Display */}
                 <View style={styles.paymentRow}>
                     <View style={styles.paymentLeft}>
                         <MaterialCommunityIcons name="credit-card-outline" size={22} color="#888" />
-                        <Text style={styles.paymentLabel}>Card</Text>
+                        <Text style={styles.paymentLabel}>{paymentMethod === 'card' ? 'Debit Card' : 'Transfer'}</Text>
                     </View>
-                    <TouchableOpacity style={styles.changeRow} onPress={() => router.push('/payment-method')}>
+                    <TouchableOpacity style={styles.changeRow} onPress={() => setShowPayment(true)}>
                         <Text style={styles.changeText}>Change</Text>
                         <Ionicons name="chevron-forward-circle" size={18} color="#8E2DE2" />
                     </TouchableOpacity>
@@ -136,43 +213,40 @@ export default function TicketSummaryScreen() {
                         </TouchableOpacity>
 
                         {/* Total amount */}
-                        <Text style={styles.payAmount}>₦1,680,000.00</Text>
+                        <Text style={styles.payAmount}>₦{total.toLocaleString()}.00</Text>
 
                         {/* Breakdown */}
                         <View style={styles.payBreakdown}>
-                            <View style={styles.payRow}>
-                                <Text style={styles.payLabel}>09 General Ticket</Text>
-                                <Text style={styles.payValue}>₦720,000</Text>
-                            </View>
-                            <View style={styles.payRow}>
-                                <Text style={styles.payLabel}>03 VVIP Ticket</Text>
-                                <Text style={styles.payValue}>₦780,000</Text>
-                            </View>
+                            {itemsList.map((item, idx) => (
+                                <View key={idx} style={styles.payRow}>
+                                    <Text style={styles.payLabel}>{item.quantity.toString().padStart(2, '0')} {item.name}</Text>
+                                    <Text style={styles.payValue}>{item.totalText}</Text>
+                                </View>
+                            ))}
                             <View style={styles.payRow}>
                                 <Text style={styles.payLabel}>Fees</Text>
-                                <Text style={styles.payValue}>$3.5</Text>
+                                <Text style={styles.payValue}>₦{fee.toLocaleString()}</Text>
                             </View>
                             <View style={[styles.payRow, { borderTopWidth: 1, borderTopColor: '#EBEBEB', paddingTop: 12, marginTop: 4 }]}>
                                 <Text style={styles.payLabel}>Total</Text>
-                                <Text style={styles.payValue}>₦1,680,000</Text>
+                                <Text style={styles.payValue}>₦{total.toLocaleString()}</Text>
                             </View>
                         </View>
 
-                        {/* Payment Method */}
+                        {/* Payment Method Selection */}
                         <TouchableOpacity style={styles.payMethodHeader}>
                             <Text style={styles.payMethodTitle}>Payment Method</Text>
-                            <Ionicons name="chevron-forward-circle" size={18} color="#8E2DE2" />
                         </TouchableOpacity>
 
                         <View style={styles.payMethodOptions}>
                             <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('card')}>
-                                <Text style={styles.payMethodLabel}>Debit Card</Text>
+                                <Text style={styles.payMethodLabel}>Debit Card (Stripe)</Text>
                                 <View style={[styles.radioOuter, paymentMethod === 'card' && styles.radioOuterSelected]}>
                                     {paymentMethod === 'card' && <View style={styles.radioInner} />}
                                 </View>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('transfer')}>
-                                <Text style={styles.payMethodLabel}>Transfer</Text>
+                                <Text style={styles.payMethodLabel}>Transfer (Manual)</Text>
                                 <View style={[styles.radioOuter, paymentMethod === 'transfer' && styles.radioOuterSelected]}>
                                     {paymentMethod === 'transfer' && <View style={styles.radioInner} />}
                                 </View>
@@ -181,14 +255,12 @@ export default function TicketSummaryScreen() {
 
                         {/* Pay Button */}
                         <TouchableOpacity
-                            style={styles.payBtn}
-                            onPress={() => {
-                                setShowPayment(false);
-                                router.push('/booking-success');
-                            }}
+                            style={[styles.payBtn, isPaying && { opacity: 0.7 }]}
+                            onPress={handlePay}
                             activeOpacity={0.85}
+                            disabled={isPaying}
                         >
-                            <Text style={styles.payBtnText}>Pay</Text>
+                            {isPaying ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.payBtnText}>Pay Now</Text>}
                         </TouchableOpacity>
                     </View>
                 </View>

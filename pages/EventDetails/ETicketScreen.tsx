@@ -11,7 +11,30 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+
 export default function ETicketScreen() {
+    const lastPurchase = useSelector((state: RootState) => state.event.lastPurchase);
+
+    if (!lastPurchase || !lastPurchase.ticket) {
+        return (
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text>No ticket available.</Text>
+                    <TouchableOpacity onPress={() => router.replace('/')} style={{ marginTop: 15, padding: 10, backgroundColor: '#8E2DE2', borderRadius: 8 }}>
+                        <Text style={{ color: '#FFF' }}>Go to Home</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    const { ticket } = lastPurchase;
+    const { event, attendee, ticketTypes } = ticket;
+
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(ticket.qrCodeValue || 'vibezlink://ticket')}`;
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
             {/* Header */}
@@ -19,7 +42,7 @@ export default function ETicketScreen() {
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={20} color="#333" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>E-Receipt</Text>
+                <Text style={styles.headerTitle}>E-Ticket</Text>
                 <TouchableOpacity style={styles.allTicketsBtn} onPress={() => router.push('/tickets')}>
                     <MaterialCommunityIcons name="ticket-outline" size={14} color="#FFF" />
                     <Text style={styles.allTicketsText}>All Tickets</Text>
@@ -31,7 +54,7 @@ export default function ETicketScreen() {
                 {/* Event Banner */}
                 <View style={styles.bannerCard}>
                     <Image
-                        source={{ uri: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600' }}
+                        source={event.imageUrl ? { uri: event.imageUrl } : { uri: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600' }}
                         style={styles.bannerImage}
                         resizeMode="cover"
                     />
@@ -43,19 +66,15 @@ export default function ETicketScreen() {
                 <View style={styles.infoSection}>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Full Name</Text>
-                        <Text style={styles.infoValue}>Roland Emmanuel</Text>
+                        <Text style={styles.infoValue}>{attendee.fullName}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Event Name</Text>
-                        <Text style={styles.infoValue}>Deejay Coded Showcase</Text>
+                        <Text style={styles.infoValue}>{event.title}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Event Date and Time</Text>
-                        <Text style={styles.infoValue}>May 15 - 9:00 PM</Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>Event Name</Text>
-                        <Text style={styles.infoValue}>Deejay Coded Showcase</Text>
+                        <Text style={styles.infoValue}>{event.dateTimeText}</Text>
                     </View>
                 </View>
 
@@ -67,20 +86,22 @@ export default function ETicketScreen() {
                         <Text style={styles.tableHeaderLabel}>Ticket Type</Text>
                         <Text style={styles.tableHeaderLabel}>Seat</Text>
                     </View>
-                    <View style={styles.tableRow}>
-                        <Text style={styles.tableRowType}>General</Text>
-                        <Text style={styles.tableRowSeat} numberOfLines={2}>E(70,71,72,73,74,75,76,77,78,79)</Text>
-                    </View>
-                    <View style={styles.tableRow}>
-                        <Text style={styles.tableRowType}>VVIP</Text>
-                        <Text style={styles.tableRowSeat}>E(2,3,4)</Text>
-                    </View>
+                    {ticketTypes.map((type: any, idx: number) => (
+                        <View key={idx} style={styles.tableRow}>
+                            <Text style={styles.tableRowType}>{type.tierName} (x{type.quantity})</Text>
+                            <Text style={styles.tableRowSeat} numberOfLines={2}>
+                                {type.seatNumbers && type.seatNumbers.length > 0 
+                                  ? type.seatNumbers.join(', ') 
+                                  : 'General Entry'}
+                            </Text>
+                        </View>
+                    ))}
                 </View>
 
                 {/* QR Code */}
                 <View style={styles.qrCard}>
                     <Image
-                        source={{ uri: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VibezLinkTicketETicket12345&margin=10' }}
+                        source={{ uri: qrCodeUrl }}
                         style={styles.qrImage}
                         resizeMode="contain"
                     />

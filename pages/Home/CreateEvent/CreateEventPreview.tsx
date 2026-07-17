@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,35 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCreateEvent } from './CreateEventContext';
+import { eventService } from '@/services/eventService';
 
 const { width } = Dimensions.get('window');
 
 const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () => void, onPublish: () => void, isPublishing?: boolean }) => {
   const { eventData } = useCreateEvent();
+  const [availableArtists, setAvailableArtists] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchArtists() {
+      try {
+        const res = await eventService.getArtistOptions();
+        const list = Array.isArray(res) ? res : res.artists || [];
+        setAvailableArtists(list.map((a: any) => ({
+          id: a.id || String(a.userId),
+          name: a.name || a.fullName || 'Artist',
+          avatarUrl: a.avatarUrl || a.profilePictureUrl || `https://i.pravatar.cc/150?img=${a.id || Math.floor(Math.random() * 50)}`,
+        })));
+      } catch (err) {
+        console.warn('[CreateEventPreview] Failed to fetch artist options:', err);
+      }
+    }
+    fetchArtists();
+  }, []);
+
+  const getSelectedArtists = () => {
+    const ids = eventData.artisteIds || [];
+    return availableArtists.filter(a => ids.includes(a.id));
+  };
   
   // Format date helper
   const formatDate = (isoStr: string) => {
@@ -80,11 +104,22 @@ const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () =>
 
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Featured Artists</Text>
-          <View style={styles.artistBox}>
-             <View style={styles.artistInput}><Text style={styles.artistInputText}>Burna Boy</Text></View>
-             <View style={styles.artistInput}><Text style={styles.artistInputText}>Pop</Text></View>
-             <View style={styles.artistInput}><Text style={styles.artistInputText}>287755700007543.png</Text></View>
-          </View>
+          {getSelectedArtists().length > 0 ? (
+            <View style={styles.artistBox}>
+              {getSelectedArtists().map((artist) => (
+                <View key={artist.id} style={[styles.artistInput, { flexDirection: 'row', alignItems: 'center' }]}>
+                  {artist.avatarUrl && (
+                    <Image source={{ uri: artist.avatarUrl }} style={{ width: 30, height: 30, borderRadius: 15, marginRight: 10 }} />
+                  )}
+                  <Text style={styles.artistInputText}>{artist.name}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>No featured artists selected.</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.previewSection}>
@@ -107,10 +142,17 @@ const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () =>
 
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Event Cover</Text>
-          <Image 
-            source={require('../../../assets/images/burna_boy.png')} 
-            style={styles.coverImage} 
-          />
+          {eventData.imageUrl ? (
+            <Image 
+              source={{ uri: eventData.imageUrl }} 
+              style={styles.coverImage} 
+            />
+          ) : (
+            <Image 
+              source={require('../../../assets/images/burna_boy.png')} 
+              style={styles.coverImage} 
+            />
+          )}
         </View>
 
         <View style={styles.previewSection}>

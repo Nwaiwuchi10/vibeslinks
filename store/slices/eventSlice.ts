@@ -8,6 +8,18 @@ interface EventState {
   currentEvent: any | null;
   comments: any[];
   isLoadingEvents: boolean;
+  bookingInfo: {
+    eventId: string;
+    selectedTiers: { [tierId: string]: number };
+    buyer: {
+      fullName: string;
+      email: string;
+      phoneNumber: string;
+      gender: string;
+      country: string;
+    };
+  } | null;
+  lastPurchase: any | null;
 }
 
 const initialState: EventState = {
@@ -18,6 +30,8 @@ const initialState: EventState = {
   currentEvent: null,
   comments: [],
   isLoadingEvents: false,
+  bookingInfo: null,
+  lastPurchase: null,
 };
 
 const eventSlice = createSlice({
@@ -48,6 +62,16 @@ const eventSlice = createSlice({
     setLoadingEvents(state, action: PayloadAction<boolean>) {
       state.isLoadingEvents = action.payload;
     },
+    setBookingInfo(state, action: PayloadAction<any>) {
+      state.bookingInfo = action.payload;
+    },
+    setLastPurchase(state, action: PayloadAction<any>) {
+      state.lastPurchase = action.payload;
+    },
+    clearBooking(state) {
+      state.bookingInfo = null;
+      state.lastPurchase = null;
+    },
   },
 });
 
@@ -60,6 +84,9 @@ export const {
   setComments,
   addCommentToState,
   setLoadingEvents,
+  setBookingInfo,
+  setLastPurchase,
+  clearBooking,
 } = eventSlice.actions;
 
 export default eventSlice.reducer;

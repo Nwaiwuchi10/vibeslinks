@@ -14,7 +14,7 @@ import { useCreateEvent, TicketTier } from './CreateEventContext';
 const TICKET_TABS = ['General', 'VIP', 'VVIP'];
 
 const CreateEventStep3 = ({ onBack, onContinue }: { onBack: () => void, onContinue: () => void }) => {
-  const [activeTab, setActiveTab] = useState('VVIP');
+  const [activeTab, setActiveTab] = useState('General');
   
   const { updateEventData } = useCreateEvent();
   

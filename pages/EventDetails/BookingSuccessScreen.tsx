@@ -3,8 +3,11 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch } from 'react-redux';
+import { clearBooking } from '@/store/slices/eventSlice';
 
 export default function BookingSuccessScreen() {
+    const dispatch = useDispatch();
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.content}>
@@ -15,7 +18,7 @@ export default function BookingSuccessScreen() {
                 </View>
 
                 <Text style={styles.title}>Congratulations!</Text>
-                <Text style={styles.subtitle}>You Have Successfully Book Event Ticket.</Text>
+                <Text style={styles.subtitle}>You Have Successfully Booked Event Tickets.</Text>
             </View>
 
             <View style={styles.bottomBar}>
@@ -29,7 +32,10 @@ export default function BookingSuccessScreen() {
 
                 <TouchableOpacity
                     style={styles.ghostBtn}
-                    onPress={() => router.replace('/')}
+                    onPress={() => {
+                        dispatch(clearBooking());
+                        router.replace('/');
+                    }}
                     activeOpacity={0.7}
                 >
                     <Text style={styles.ghostBtnText}>Go to Home</Text>

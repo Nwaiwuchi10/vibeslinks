@@ -8,15 +8,40 @@ import {
     View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { setBookingInfo } from '@/store/slices/eventSlice';
+
 export default function BookTicketScreen() {
-    const [gender, setGender] = useState('Male');
-    const [country, setCountry] = useState('Nigeria');
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const dispatch = useDispatch();
+    const bookingInfo = useSelector((state: RootState) => state.event.bookingInfo);
+
+    const [gender, setGender] = useState(bookingInfo?.buyer?.gender || 'Male');
+    const [country, setCountry] = useState(bookingInfo?.buyer?.country || 'Nigeria');
+    const [fullName, setFullName] = useState(bookingInfo?.buyer?.fullName || '');
+    const [email, setEmail] = useState(bookingInfo?.buyer?.email || '');
+    const [phone, setPhone] = useState(bookingInfo?.buyer?.phoneNumber || '');
+
+    const handleContinue = () => {
+        if (!fullName.trim() || !email.trim() || !phone.trim()) {
+            return;
+        }
+        dispatch(setBookingInfo({
+            ...bookingInfo,
+            buyer: {
+                fullName,
+                email,
+                phoneNumber: phone,
+                gender,
+                country,
+            }
+        }));
+        router.push({ pathname: '/ticket-summary', params: { id } });
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -55,18 +80,27 @@ export default function BookTicketScreen() {
 
                 {/* Gender */}
                 <Text style={styles.fieldLabel}>Gender</Text>
-                <TouchableOpacity style={styles.dropdownBox}>
-                    <Text style={styles.dropdownText}>{gender}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#888" />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                    {['Male', 'Female'].map(g => (
+                        <TouchableOpacity 
+                            key={g} 
+                            style={[
+                                styles.dropdownBox, 
+                                { flex: 1, justifyContent: 'center', borderColor: gender === g ? '#8E2DE2' : '#EBEBEB', borderWidth: gender === g ? 2 : 1 }
+                            ]}
+                            onPress={() => setGender(g)}
+                        >
+                            <Text style={{ textAlign: 'center', color: gender === g ? '#8E2DE2' : '#333', fontWeight: gender === g ? '700' : '400' }}>{g}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
 
                 {/* Phone */}
                 <Text style={styles.fieldLabel}>Phone</Text>
                 <View style={styles.phoneRow}>
-                    <TouchableOpacity style={styles.countryCodeBox}>
+                    <View style={styles.countryCodeBox}>
                         <Text style={styles.countryCodeText}>NGN +234</Text>
-                        <Ionicons name="chevron-down" size={16} color="#888" />
-                    </TouchableOpacity>
+                    </View>
                     <View style={styles.phoneInputBox}>
                         <TextInput
                             style={styles.input}
@@ -81,9 +115,9 @@ export default function BookTicketScreen() {
 
                 {/* Country */}
                 <Text style={styles.fieldLabel}>Country</Text>
-                <TouchableOpacity style={styles.dropdownBox}>
+                <TouchableOpacity style={styles.dropdownBox} disabled>
                     <Text style={styles.dropdownText}>{country}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#888" />
+                    <Ionicons name="lock-closed" size={16} color="#888" />
                 </TouchableOpacity>
 
                 <View style={{ height: 120 }} />
@@ -92,9 +126,10 @@ export default function BookTicketScreen() {
             {/* Bottom CTA */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
-                    style={styles.ctaBtn}
-                    onPress={() => router.push('/ticket-summary')}
+                    style={[styles.ctaBtn, (!fullName.trim() || !email.trim() || !phone.trim()) && { opacity: 0.5 }]}
+                    onPress={handleContinue}
                     activeOpacity={0.85}
+                    disabled={!fullName.trim() || !email.trim() || !phone.trim()}
                 >
                     <Text style={styles.ctaBtnText}>Continue</Text>
                 </TouchableOpacity>

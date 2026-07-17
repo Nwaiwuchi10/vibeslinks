@@ -1,7 +1,7 @@
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import React from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
     Dimensions,
     Image,
@@ -13,31 +13,93 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
+import { eventService } from '@/services/eventService';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '@/store';
 
 const { width } = Dimensions.get('window');
 
-const TICKETS = [
-    { id: '1', type: 'General', title: 'Priority entry', price: '₦10,000', image: require('../../assets/images/burna_boy.png') },
-    { id: '2', type: 'VIP', title: 'Lounge access\nFree drinks\nPriority entry', price: '₦50,000', soldOut: true, image: require('../../assets/images/burna_boy.png') },
-];
-
-const RELATED_EVENTS = [
-    { id: '1', title: 'Afro Summer Festival', location: 'Lekki Ikala, Lagos', price: '₦10,000', image: require('../../assets/images/davido_event.png'), badge: 'NIGHTLIFE' },
-    { id: '2', title: 'Worship Da King', location: 'Lekki Ikala, Lagos', price: '₦5,000', image: require('../../assets/images/ye.png'), badge: 'FESTIVALS' },
-    { id: '3', title: 'Afro Summer Festival', location: 'Lekki Ikala, Lagos', price: '₦10,000', image: require('../../assets/images/davido.png'), badge: 'SPORTS EVENTS' },
-    { id: '4', title: 'Paint With Mimi &...', location: 'Lekki Ikala, Lagos', price: '₦5,000', image: require('../../assets/images/modu.png'), badge: 'COMEDY' },
-];
-
 const EventDetails = () => {
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const dispatch = useDispatch();
+    const [loading, setLoading] = useState(true);
+    const [commentText, setCommentText] = useState('');
+    const [submittingComment, setSubmittingComment] = useState(false);
+
+    const event = useSelector((state: RootState) => state.event.currentEvent);
+    const commentsList = useSelector((state: RootState) => state.event.comments);
+
+    useEffect(() => {
+        if (!id) return;
+        async function fetchDetails() {
+            try {
+                setLoading(true);
+                await eventService.getEventDetailsScreen(id!);
+                await eventService.getEventComments(id!);
+            } catch (err) {
+                console.warn('[EventDetails] Fetch failed:', err);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchDetails();
+    }, [id]);
+
+    const handleAddComment = async () => {
+        if (!id || !commentText.trim() || submittingComment) return;
+        try {
+            setSubmittingComment(true);
+            await eventService.createEventComment(id, commentText.trim());
+            setCommentText('');
+        } catch (err) {
+            console.warn('[EventDetails] Comment failed:', err);
+        } finally {
+            setSubmittingComment(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' }}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+            </View>
+        );
+    }
+
+    if (!event) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' }}>
+                <Text style={{ fontSize: 16, color: '#666' }}>Event not found</Text>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 15, padding: 10, backgroundColor: Colors.primary, borderRadius: 8 }}>
+                    <Text style={{ color: '#FFF' }}>Go Back</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    const heroImage = event.hero?.imageUrl || event.imageUrl || '';
+    const title = event.summary?.title || event.title || 'Untitled Event';
+    const category = event.summary?.categoryLabel || event.category || 'Event';
+    const location = event.summary?.locationText || event.location || 'TBD';
+    const dateText = event.summary?.dateTimeText || (event.startsAt ? new Date(event.startsAt).toLocaleString() : 'TBD');
+    const attendeeCount = event.summary?.attendeeCountLabel || '0+';
+    const attendeeList = event.summary?.attendees || [];
+    const description = event.about?.description || event.description || 'No description provided.';
+    const host = event.organizer?.host || { name: 'Organizer', username: 'host', avatarUrl: null };
+    const artists = event.featuredArtists?.artists || [];
+    const tickets = event.ticketCards?.tickets || [];
+    const countdown = event.countdown || { days: '00', hours: '00', minutes: '00', seconds: '00' };
+
     return (
         <View style={styles.container}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {/* Header Image Section */}
                 <ImageBackground
-                    source={require('../../assets/images/burna_boy.png')}
+                    source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')}
                     style={styles.headerImage}
                 >
                     <LinearGradient
@@ -49,7 +111,10 @@ const EventDetails = () => {
                                 <Ionicons name="arrow-back" size={20} color="#FFF" />
                             </TouchableOpacity>
                             <View style={{ flexDirection: 'row' }}>
-                                <TouchableOpacity style={[styles.iconCircle, { marginRight: 10 }]}>
+                                <TouchableOpacity 
+                                    style={[styles.iconCircle, { marginRight: 10 }]}
+                                    onPress={() => id && eventService.saveEventToFavorite(id)}
+                                >
                                     <Ionicons name="heart-outline" size={20} color="#FFF" />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.iconCircle}>
@@ -63,67 +128,58 @@ const EventDetails = () => {
                 {/* Event Main Info */}
                 <View style={styles.mainContent}>
                     <View style={styles.titleRow}>
-                        <Text style={styles.eventTitle}>Deejay Coded Showcase</Text>
+                        <Text style={styles.eventTitle}>{title}</Text>
                         <View style={styles.nightlifeBadge}>
-                            <Text style={styles.nightlifeText}>Nightlife</Text>
+                            <Text style={styles.nightlifeText}>{category.toUpperCase()}</Text>
                         </View>
                     </View>
 
                     <View style={styles.infoIconsRow}>
                         <View style={styles.infoIconItem}>
                             <Ionicons name="location" size={16} color={Colors.primary} />
-                            <Text style={styles.infoIconText}>Lekki Ikala, Lagos Nigeria</Text>
-                            <Ionicons name="information-circle-outline" size={14} color="#888" style={{ marginLeft: 4 }} />
+                            <Text style={styles.infoIconText}>{location}</Text>
                         </View>
                         <View style={[styles.infoIconItem, { marginLeft: 20 }]}>
                             <MaterialIcons name="access-time" size={16} color={Colors.primary} />
-                            <Text style={styles.infoIconText}>May 15 - 9:00 PM</Text>
+                            <Text style={styles.infoIconText}>{dateText}</Text>
                         </View>
                     </View>
 
                     {/* Attending / Invites */}
                     <View style={styles.inviteRow}>
                         <View style={styles.avatarStack}>
-                            {[1, 2, 3, 4].map((id) => (
+                            {attendeeList.slice(0, 4).map((att: any, idx: number) => (
                                 <Image
-                                    key={id}
-                                    source={{ uri: `https://i.pravatar.cc/150?img=${id + 20}` }}
-                                    style={[styles.smallAvatar, { marginLeft: id === 1 ? 0 : -8 }]}
+                                    key={idx}
+                                    source={{ uri: att.avatarUrl || `https://i.pravatar.cc/150?img=${idx + 20}` }}
+                                    style={[styles.smallAvatar, { marginLeft: idx === 0 ? 0 : -8 }]}
                                 />
                             ))}
-                            <Text style={styles.plusText}>15,340+</Text>
+                            <Text style={styles.plusText}>{attendeeCount}</Text>
                         </View>
-                        <TouchableOpacity>
-                            <Text style={styles.viewInviteText}>View Invite <Ionicons name="arrow-forward" size={12} color={Colors.primary} /></Text>
-                        </TouchableOpacity>
                     </View>
 
                     {/* About Event */}
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>About Event</Text>
-                            <TouchableOpacity>
-                                <Text style={styles.readMoreText}>Read more <Ionicons name="information-circle-outline" size={12} /></Text>
-                            </TouchableOpacity>
                         </View>
-                        <Text style={styles.description}>
-                            Experience one of the biggest Afrobeat festivals featuring top DJs, live performances, VIP experiences, and unforgettable nightlife energy.
-                        </Text>
+                        <Text style={styles.description}>{description}</Text>
                     </View>
 
                     {/* Organizer */}
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Organizer</Text>
-                            <TouchableOpacity onPress={() => router.push('/host-profile')}>
-                                <Text style={styles.aboutHostText}>About Host <Ionicons name="arrow-forward" size={12} /></Text>
-                            </TouchableOpacity>
                         </View>
                         <View style={styles.hostCard}>
-                            <Image source={{ uri: 'https://i.pravatar.cc/150?img=33' }} style={styles.hostAvatar} />
+                            <Image 
+                                source={host.avatarUrl ? { uri: host.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${host.username}` }} 
+                                style={styles.hostAvatar} 
+                            />
                             <View style={{ flex: 1, marginLeft: 12 }}>
                                 <Text style={styles.hostLabel}>Hosted by</Text>
-                                <Text style={styles.hostName}>Coded Media</Text>
+                                <Text style={styles.hostName}>{host.name}</Text>
                             </View>
                             <TouchableOpacity style={styles.followButton}>
                                 <Text style={styles.followButtonText}>Follow</Text>
@@ -131,147 +187,140 @@ const EventDetails = () => {
                         </View>
                     </View>
 
-                    {/* Map Placeholder */}
-                    <View style={styles.mapContainer}>
-                        <Image source={require('../../assets/images/staticMap.png')} style={styles.mapImage} />
-                        <View style={styles.mapOverlay}>
-                            <View style={styles.mapPin}>
-                                <Ionicons name="location" size={24} color="#FFF" />
+                    {/* Map Placement */}
+                    {event.directions?.map && (
+                        <View style={styles.mapContainer}>
+                            <Image source={require('../../assets/images/staticMap.png')} style={styles.mapImage} />
+                            <View style={styles.mapOverlay}>
+                                <View style={styles.mapPin}>
+                                    <Ionicons name="location" size={24} color="#FFF" />
+                                </View>
                             </View>
+                            <Text style={styles.mapAddress}>{event.directions.addressLabel || location}</Text>
                         </View>
-                        <Text style={styles.mapAddress}>Lekki Ikala, Lagos Nigeria</Text>
-                    </View>
+                    )}
 
                     {/* Featured Artists */}
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Featured Artists (3)</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.artistScroll}>
-                            <View style={styles.artistCard}>
-                                <Image source={require('../../assets/images/burna_boy.png')} style={styles.artistImage} />
-                                <Text style={styles.artistName}>Burna Boy</Text>
-                                <View style={styles.popBadge}><Text style={styles.popText}>Pop</Text></View>
-                            </View>
-                            <View style={styles.artistCard}>
-                                <Image source={require('../../assets/images/odumodu.png')} style={styles.artistImage} />
-                                <Text style={styles.artistName}>Odumodu Blvck</Text>
-                                <View style={styles.popBadge}><Text style={styles.popText}>Afrobeats</Text></View>
-                            </View>
-                        </ScrollView>
-                    </View>
+                    {artists.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Featured Artists ({artists.length})</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.artistScroll}>
+                                {artists.map((artist: any, idx: number) => (
+                                    <View key={idx} style={styles.artistCard}>
+                                        <Image 
+                                            source={artist.avatarUrl ? { uri: artist.avatarUrl } : require('../../assets/images/burna_boy.png')} 
+                                            style={styles.artistImage} 
+                                        />
+                                        <Text style={styles.artistName}>{artist.name || artist.fullName}</Text>
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
 
                     {/* Ticket Cards */}
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Ticket Cards</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ticketScroll}>
-                            {TICKETS.map((ticket) => (
-                                <View key={ticket.id} style={styles.ticketCard}>
-                                    <ImageBackground source={ticket.image} style={styles.ticketImgBg} imageStyle={{ borderRadius: 16 }}>
-                                        <View style={[styles.ticketTypeBadge, { backgroundColor: ticket.type === 'VIP' ? '#7B2FFF' : '#A45BFF' }]}>
-                                            <Text style={styles.ticketTypeText}>{ticket.type}</Text>
-                                        </View>
-                                    </ImageBackground>
-                                    <View style={styles.ticketInfo}>
-                                        <Text style={styles.ticketDetails}>{ticket.title}</Text>
-                                        <View style={styles.ticketFooter}>
-                                            <Text style={styles.ticketPrice}>{ticket.price}<Text style={styles.priceSub}>/Person</Text></Text>
-                                            <TouchableOpacity style={[styles.buySmallButton, ticket.soldOut && styles.soldOutButton]}>
-                                                <Text style={styles.buySmallText}>{ticket.soldOut ? 'SOLD OUT' : 'BUY'}</Text>
-                                            </TouchableOpacity>
+                    {tickets.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Ticket Cards</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ticketScroll}>
+                                {tickets.map((t: any) => (
+                                    <View key={t.id} style={styles.ticketCard}>
+                                        <ImageBackground 
+                                            source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')} 
+                                            style={styles.ticketImgBg} 
+                                            imageStyle={{ borderRadius: 16 }}
+                                        >
+                                            <View style={[styles.ticketTypeBadge, { backgroundColor: '#7B2FFF' }]}>
+                                                <Text style={styles.ticketTypeText}>{t.label}</Text>
+                                            </View>
+                                        </ImageBackground>
+                                        <View style={styles.ticketInfo}>
+                                            <Text style={styles.ticketDetails}>{t.description || 'Priority Entry'}</Text>
+                                            <View style={styles.ticketFooter}>
+                                                <Text style={styles.ticketPrice}>{t.priceText}<Text style={styles.priceSub}>/Person</Text></Text>
+                                                <TouchableOpacity 
+                                                    style={[styles.buySmallButton, t.soldOut && styles.soldOutButton]}
+                                                    onPress={() => !t.soldOut && router.push({ pathname: '/select-ticket', params: { id } })}
+                                                >
+                                                    <Text style={styles.buySmallText}>{t.soldOut ? 'SOLD OUT' : 'BUY'}</Text>
+                                                </TouchableOpacity>
+                                            </View>
                                         </View>
                                     </View>
-                                </View>
-                            ))}
-                        </ScrollView>
-                    </View>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
 
                     {/* Event Starts In */}
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Event Start In</Text>
-                        <ImageBackground source={require('../../assets/images/burna_boy.png')} style={styles.timerBg} imageStyle={{ borderRadius: 16 }}>
-                            <View style={styles.timerOverlay}>
-                                <View style={styles.timerRow}>
-                                    <View style={styles.timeUnit}>
-                                        <Text style={styles.timeValue}>05</Text>
-                                        <Text style={styles.timeLabel}>DAYS</Text>
-                                    </View>
-                                    <View style={styles.timeUnit}>
-                                        <Text style={styles.timeValue}>22</Text>
-                                        <Text style={styles.timeLabel}>HOURS</Text>
-                                    </View>
-                                    <View style={styles.timeUnit}>
-                                        <Text style={styles.timeValue}>05</Text>
-                                        <Text style={styles.timeLabel}>MINUTES</Text>
-                                    </View>
-                                    <View style={styles.timeUnit}>
-                                        <Text style={styles.timeValue}>01</Text>
-                                        <Text style={styles.timeLabel}>SECONDS</Text>
+                    {countdown && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Event Start In</Text>
+                            <ImageBackground 
+                                source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')} 
+                                style={styles.timerBg} 
+                                imageStyle={{ borderRadius: 16 }}
+                            >
+                                <View style={styles.timerOverlay}>
+                                    <View style={styles.timerRow}>
+                                        <View style={styles.timeUnit}>
+                                            <Text style={styles.timeValue}>{countdown.days || '00'}</Text>
+                                            <Text style={styles.timeLabel}>DAYS</Text>
+                                        </View>
+                                        <View style={styles.timeUnit}>
+                                            <Text style={styles.timeValue}>{countdown.hours || '00'}</Text>
+                                            <Text style={styles.timeLabel}>HOURS</Text>
+                                        </View>
+                                        <View style={styles.timeUnit}>
+                                            <Text style={styles.timeValue}>{countdown.minutes || '00'}</Text>
+                                            <Text style={styles.timeLabel}>MINUTES</Text>
+                                        </View>
+                                        <View style={styles.timeUnit}>
+                                            <Text style={styles.timeValue}>{countdown.seconds || '00'}</Text>
+                                            <Text style={styles.timeLabel}>SECONDS</Text>
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
-                        </ImageBackground>
-                    </View>
+                            </ImageBackground>
+                        </View>
+                    )}
 
                     {/* Comments */}
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>31 Comments</Text>
-                            <TouchableOpacity>
-                                <Text style={styles.viewAllComments}>See all <Ionicons name="arrow-forward" size={12} /></Text>
-                            </TouchableOpacity>
+                            <Text style={styles.sectionTitle}>{commentsList.length} Comments</Text>
                         </View>
                         <View style={styles.commentInputRow}>
-                            <TextInput placeholder="Leave a comment" style={styles.commentInput} />
-                            <TouchableOpacity style={styles.sendButton}>
-                                <Ionicons name="send" size={16} color="#FFF" />
+                            <TextInput 
+                                placeholder="Leave a comment" 
+                                style={styles.commentInput} 
+                                value={commentText}
+                                onChangeText={setCommentText}
+                            />
+                            <TouchableOpacity style={styles.sendButton} onPress={handleAddComment} disabled={submittingComment}>
+                                {submittingComment ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send" size={16} color="#FFF" />}
                             </TouchableOpacity>
                         </View>
 
-                        <View style={styles.commentItem}>
-                            <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.commentAvatar} />
-                            <View style={{ flex: 1 }}>
-                                <View style={styles.commentHeader}>
-                                    <Text style={styles.commentUser}>samrays_dainty <MaterialIcons name="verified" size={10} color={Colors.primary} /> <Text style={styles.commentTime}>. 2h</Text></Text>
-                                    <TouchableOpacity><Ionicons name="ellipsis-horizontal" size={16} color="#888" /></TouchableOpacity>
-                                </View>
-                                <Text style={styles.commentText}>When is coming from down lower</Text>
-                                <View style={styles.commentActions}>
-                                    <TouchableOpacity style={styles.commentAction}><Ionicons name="heart-outline" size={14} color="#888" /><Text style={styles.actionCount}>441</Text></TouchableOpacity>
-                                </View>
-
-                                {/* Reply */}
-                                <View style={styles.replyItem}>
-                                    <Image source={{ uri: 'https://i.pravatar.cc/150?img=13' }} style={styles.replyAvatar} />
+                        {commentsList.slice(0, 3).map((item: any, idx: number) => {
+                            const author = item.user || { name: 'User', username: 'user', avatarUrl: null };
+                            return (
+                                <View key={idx} style={styles.commentItem}>
+                                    <Image 
+                                        source={author.avatarUrl ? { uri: author.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${author.username}` }} 
+                                        style={styles.commentAvatar} 
+                                    />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commentUser}>Nicky <Text style={styles.commentTime}> . 1h</Text></Text>
-                                        <Text style={styles.commentText}>Me am come from there</Text>
-                                        <View style={styles.commentActions}>
-                                            <TouchableOpacity style={styles.commentAction}><Ionicons name="heart-outline" size={14} color="#888" /><Text style={styles.actionCount}>441</Text></TouchableOpacity>
+                                        <View style={styles.commentHeader}>
+                                            <Text style={styles.commentUser}>
+                                                {author.name} <Text style={styles.commentTime}>. {new Date(item.createdAt).toLocaleDateString()}</Text>
+                                            </Text>
                                         </View>
+                                        <Text style={styles.commentText}>{item.message}</Text>
                                     </View>
                                 </View>
-                            </View>
-                        </View>
-                    </View>
-
-                    {/* Other Events */}
-                    <View style={[styles.section, { marginBottom: 100 }]}>
-                        <Text style={styles.sectionTitle}>Other events you may like</Text>
-                        <View style={styles.otherEventsList}>
-                            {RELATED_EVENTS.map((item) => (
-                                <View key={item.id} style={styles.otherEventCard}>
-                                    <Image source={item.image} style={styles.otherEventImg} />
-                                    <View style={styles.otherEventInfo}>
-                                        <View style={styles.otherBadge}><Text style={styles.otherBadgeText}>{item.badge}</Text></View>
-                                        <Text style={styles.otherTitle}>{item.title}</Text>
-                                        <View style={styles.otherLocRow}>
-                                            <Ionicons name="location" size={12} color={Colors.primary} />
-                                            <Text style={styles.otherLoc}>{item.location}</Text>
-                                        </View>
-                                        <Text style={styles.otherPrice}>{item.price} <Text style={{ color: '#888', fontWeight: '400' }}>/Person</Text></Text>
-                                    </View>
-                                </View>
-                            ))}
-                        </View>
+                            );
+                        })}
                     </View>
                 </View>
             </ScrollView>
@@ -279,10 +328,13 @@ const EventDetails = () => {
             {/* Bottom Purchase Bar */}
             <View style={styles.bottomBar}>
                 <View>
-                    <Text style={styles.bottomLabel}>From</Text>
-                    <Text style={styles.bottomPrice}>₦10,000 <Text style={styles.bottomSub}>/ Person</Text></Text>
+                    <Text style={styles.bottomLabel}>Price</Text>
+                    <Text style={styles.bottomPrice}>{event.stickyPurchase?.priceText || '₦'}</Text>
                 </View>
-                <TouchableOpacity style={styles.buyButton} onPress={() => router.push('/select-ticket')}>
+                <TouchableOpacity 
+                    style={styles.buyButton} 
+                    onPress={() => router.push({ pathname: '/select-ticket', params: { id } })}
+                >
                     <Text style={styles.buyButtonText}>Buy Tickets</Text>
                 </TouchableOpacity>
             </View>
