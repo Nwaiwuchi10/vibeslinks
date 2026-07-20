@@ -116,7 +116,10 @@ export default function AddFundMain() {
           <TouchableOpacity
             style={styles.continueBtn}
             activeOpacity={0.85}
-            onPress={() => router.push('/dashboard/payment-method')}
+            onPress={() => {
+              if (!amount || parseFloat(amount) <= 0) return;
+              router.push({ pathname: '/dashboard/payment-method', params: { amount } } as any);
+            }}
           >
             <Text style={styles.continueBtnText}>Continue</Text>
           </TouchableOpacity>

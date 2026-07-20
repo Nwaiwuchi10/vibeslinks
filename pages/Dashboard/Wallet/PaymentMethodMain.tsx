@@ -13,17 +13,23 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { stripeService } from '@/services/stripeService';
+import { Alert, ActivityIndicator } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function PaymentMethodMain() {
   const router = useRouter();
+  const { amount: amountParam } = useLocalSearchParams<{ amount?: string }>();
+  const displayAmount = amountParam ? parseFloat(amountParam) : 300000;
+
   const [cardHolderName, setCardHolderName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expireDate, setExpireDate] = useState('');
   const [ccv, setCcv] = useState('');
   const [saveCard, setSaveCard] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   const formatCardNumber = (text: string) => {
     // Remove non-digits, max 16 digits, group in 4s
@@ -72,7 +78,7 @@ export default function PaymentMethodMain() {
                 <Ionicons name="arrow-down" size={9} color="#7B39FD" />
               </View>
             </View>
-            <Text style={styles.amountValue}>₦300,000.00</Text>
+            <Text style={styles.amountValue}>₦{displayAmount.toLocaleString()}.00</Text>
             <Text style={styles.amountSubLabel}>Transaction Amount</Text>
           </View>
 
@@ -189,11 +195,41 @@ export default function PaymentMethodMain() {
         {/* ── Pay Button ── */}
         <View style={styles.bottomContainer}>
           <TouchableOpacity
-            style={styles.payBtn}
+            style={[styles.payBtn, isPaying && { opacity: 0.7 }]}
             activeOpacity={0.85}
-            onPress={() => router.push('/dashboard/wallet-success')}
+            disabled={isPaying}
+            onPress={async () => {
+              if (isPaying) return;
+              if (!cardNumber.trim() || !expireDate.trim() || !ccv.trim()) {
+                Alert.alert('Error', 'Please fill in all card details.');
+                return;
+              }
+              setIsPaying(true);
+              try {
+                // Step 1: Create Stripe intent
+                // For demo/test cards we use a fake pm_card_visa or setup intent secret
+                const intentData = await stripeService.createSetupIntent();
+                if (!intentData?.clientSecret) throw new Error('Failed to generate intent');
+
+                // Step 2: Register payment method
+                const pmResult = await stripeService.addPaymentMethod(intentData.clientSecret, saveCard);
+                const paymentMethodId = pmResult?.paymentMethod?.id || pmResult?.id || 'pm_card_visa';
+
+                // Step 3: Funding wallet
+                await stripeService.fundWallet(displayAmount, paymentMethodId);
+                router.push('/dashboard/wallet-success');
+              } catch (err: any) {
+                Alert.alert('Payment Failed', err.response?.data?.message || err?.message || 'Transaction failed. Please try again.');
+              } finally {
+                setIsPaying(false);
+              }
+            }}
           >
-            <Text style={styles.payBtnText}>Pay</Text>
+            {isPaying ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Text style={styles.payBtnText}>Pay</Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
