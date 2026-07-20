@@ -20,6 +20,7 @@ const { width } = Dimensions.get('window');
 
 const QUICK_ACTIONS = [
   { id: '1', name: 'Go Live', icon: 'video', color: '#8E2DE2' },
+  { id: '5', name: 'Create Post', icon: 'pencil-box-multiple', color: '#8A2BE2' },
   { id: '2', name: 'Create Event', icon: 'file-document', color: '#0082FF' },
   { id: '3', name: 'Radio FM', icon: 'microphone-variant', color: '#6BB100' },
   { id: '4', name: 'Watch Stream', icon: 'television-play', color: '#FF006B' },
@@ -75,24 +76,31 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Quick Actions */}
-        <View style={styles.actionsRow}>
-          {QUICK_ACTIONS.map((action) => (
-            <View key={action.id} style={styles.actionItem}>
-              <TouchableOpacity 
-                style={[styles.actionCircle, { backgroundColor: action.color }]}
-                onPress={() => {
-                  if (action.id === '1') router.push('/go-live');
-                  else if (action.id === '2') onCreateEventPress();
-                  else if (action.id === '3') router.push('/radio');
-                  else if (action.id === '4') router.push('/watch-stream');
-                }}
-              >
-                <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.actionName}>{action.name}</Text>
-            </View>
-          ))}
+        {/* Quick Actions Scroll Horizontal */}
+        <View style={{ marginBottom: 25 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.actionsScrollContainer}
+          >
+            {QUICK_ACTIONS.map((action) => (
+              <View key={action.id} style={styles.actionItem}>
+                <TouchableOpacity 
+                  style={[styles.actionCircle, { backgroundColor: action.color }]}
+                  onPress={() => {
+                    if (action.id === '1') router.push('/go-live');
+                    else if (action.id === '2') onCreateEventPress();
+                    else if (action.id === '3') router.push('/radio');
+                    else if (action.id === '4') router.push('/watch-stream');
+                    else if (action.id === '5') router.push('/add-story');
+                  }}
+                >
+                  <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
+                </TouchableOpacity>
+                <Text style={styles.actionName}>{action.name}</Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Ad Banner */}
@@ -177,8 +185,8 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row' },
   iconBtn: { marginLeft: 15, width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
-  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
-  actionItem: { alignItems: 'center' },
+  actionsScrollContainer: { gap: 16, paddingRight: 20 },
+  actionItem: { alignItems: 'center', width: 72 },
   actionCircle: { width: 68, height: 68, borderRadius: 34, justifyContent: 'center', alignItems: 'center', elevation: 3 },
   actionName: { fontSize: 11, color: '#333', fontWeight: '700', marginTop: 10 },
   adBanner: { width: '100%', height: 160, borderRadius: 20, overflow: 'hidden', marginBottom: 25 },

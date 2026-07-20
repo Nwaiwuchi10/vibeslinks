@@ -13,6 +13,10 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppSelector } from '@/store/hooks';
+import { eventService } from '@/services/eventService';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -38,6 +42,32 @@ const EVENTS = [
 ];
 
 const EventNearYouScreen = () => {
+    const nearYouEvents = useAppSelector((state) => state.event.nearYou);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        eventService.getEventsNearYou()
+            .catch((err) => console.log('[EventNearYouScreen] Error fetching events:', err))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const displayEvents = nearYouEvents.map((evt: any) => ({
+        id: evt.id,
+        title: evt.title,
+        imageUrl: evt.imageUrl || evt.coverImageUrl || evt.eventPosterUrl || null,
+        location: evt.location || evt.venue || evt.locationText || 'Lagos, Nigeria',
+        dateTimeText: evt.dateTimeText || (evt.startDateTime ? new Date(evt.startDateTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        }) : 'Upcoming'),
+        priceText: evt.priceText || (evt.ticketPricingTiers?.[0]
+            ? `₦${Number(evt.ticketPricingTiers[0].price).toLocaleString()}`
+            : 'Free'),
+        attendees: evt.attendees || [],
+    }));
+
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             {/* Header */}
@@ -56,56 +86,76 @@ const EventNearYouScreen = () => {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {EVENTS.map((event) => (
-                    <TouchableOpacity 
-                        key={event.id} 
-                        style={styles.card}
-                        onPress={() => router.push('/event-details')}
-                        activeOpacity={0.9}
-                    >
-                        <Image source={event.image} style={styles.cardImage} />
+            {loading ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#8E2DE2" />
+                </View>
+            ) : displayEvents.length === 0 ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Ionicons name="location-outline" size={48} color="#CCC" />
+                    <Text style={{ color: '#999', marginTop: 12, fontSize: 14, textAlign: 'center' }}>No events near you found</Text>
+                </View>
+            ) : (
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {displayEvents.map((event: any) => (
+                        <TouchableOpacity 
+                            key={event.id} 
+                            style={styles.card}
+                            onPress={() => router.push({
+                                pathname: '/event-details',
+                                params: { id: event.id }
+                            })}
+                            activeOpacity={0.9}
+                        >
+                            {event.imageUrl ? (
+                                <Image source={{ uri: event.imageUrl }} style={styles.cardImage} />
+                            ) : (
+                                <Image source={require('../../assets/images/redvive.png')} style={styles.cardImage} />
+                            )}
 
-                        <View style={styles.cardBody}>
-                            <Text style={styles.cardTitle}>{event.title}</Text>
+                            <View style={styles.cardBody}>
+                                <Text style={styles.cardTitle}>{event.title}</Text>
 
-                            <View style={styles.infoRow}>
-                                <View style={styles.infoItem}>
-                                    <Ionicons name="location" size={16} color={Colors.primary} />
-                                    <Text style={styles.infoText}>{event.location}</Text>
+                                <View style={styles.infoRow}>
+                                    <View style={styles.infoItem}>
+                                        <Ionicons name="location" size={16} color={Colors.primary} />
+                                        <Text style={styles.infoText}>{event.location}</Text>
+                                    </View>
+                                    <View style={[styles.infoItem, { marginLeft: 15 }]}>
+                                        <MaterialIcons name="access-time" size={16} color={Colors.primary} />
+                                        <Text style={styles.infoText}>{event.dateTimeText}</Text>
+                                    </View>
                                 </View>
-                                <View style={[styles.infoItem, { marginLeft: 15 }]}>
-                                    <MaterialIcons name="access-time" size={16} color={Colors.primary} />
-                                    <Text style={styles.infoText}>{event.date}</Text>
+
+                                <View style={styles.cardFooter}>
+                                    <Text style={styles.priceContainer}>
+                                        <Text style={styles.priceText}>{event.priceText}</Text>
+                                        <Text style={styles.priceSubText}>/Person</Text>
+                                    </Text>
+
+                                    {event.attendees?.length > 0 && (
+                                        <View style={styles.attendingContainer}>
+                                            {event.attendees.slice(0, 4).map((att: any, idx: number) => (
+                                                <Image
+                                                    key={idx}
+                                                    source={{ uri: att.avatarUrl || att.profilePictureUrl || `https://i.pravatar.cc/150?img=${idx + 5}` }}
+                                                    style={[
+                                                        styles.avatar,
+                                                        { marginLeft: idx === 0 ? 0 : -8, zIndex: 10 - idx }
+                                                    ]}
+                                                />
+                                            ))}
+                                        </View>
+                                    )}
                                 </View>
                             </View>
-
-                            <View style={styles.cardFooter}>
-                                <Text style={styles.priceContainer}>
-                                    <Text style={styles.priceText}>{event.price}</Text>
-                                    <Text style={styles.priceSubText}>/Person</Text>
-                                </Text>
-
-                                <View style={styles.attendingContainer}>
-                                    {event.attending.map((imgId, idx) => (
-                                        <Image
-                                            key={idx}
-                                            source={{ uri: `https://i.pravatar.cc/150?img=${imgId}` }}
-                                            style={[
-                                                styles.avatar,
-                                                { marginLeft: idx === 0 ? 0 : -8, zIndex: 10 - idx }
-                                            ]}
-                                        />
-                                    ))}
-                                </View>
-                            </View>
-                        </View>
-                    </TouchableOpacity>
-                ))}
-            </ScrollView>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            )}
 
             {/* Bottom Button Container */}
             <View style={styles.bottomContainer}>
