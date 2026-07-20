@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     KeyboardAvoidingView,
@@ -11,34 +11,23 @@ import {
     View,
     Modal,
     Image,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { liveStreamService } from '@/services/liveStreamService';
+import { Colors } from '@/constants/Colors';
 
 const { width, height } = Dimensions.get('window');
 
-const CIRCLE_SIZE = (width - 48 - 40) / 3; // 3 cols with padding + gaps
+const CIRCLE_SIZE = (width - 48 - 40) / 3;
 
-const CATEGORIES = [
-    'Music',
-    'DJ Session',
-    'Podcast',
-    'Event Stream',
-    'Interview',
-];
-
-const PRIVACY_OPTIONS = [
-    'All',
-    'Public',
-    'Followers Only',
-    'Ticket Holders Only',
-    'Private Invite',
-];
+const DEFAULT_CATEGORIES = ['Music', 'DJ Session', 'Podcast', 'Event Stream', 'Interview'];
+const DEFAULT_PRIVACY = ['All', 'Public', 'Followers Only', 'Ticket Holders Only', 'Private Invite'];
 
 const GUESTS = [
-    { id: '1', avatar: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?q=80&w=200' }, // Random male face
+    { id: '1', avatar: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?q=80&w=200' },
     { id: '2', avatar: null },
     { id: '3', avatar: null },
     { id: '4', avatar: null },
@@ -55,6 +44,9 @@ export default function GoLiveScreen() {
     const [streamTitle, setStreamTitle] = useState('');
     const [ticketPrice, setTicketPrice] = useState('');
     const [audioMode, setAudioMode] = useState<'voice' | 'camera'>(params.mode || 'camera');
+    const [loadingOptions, setLoadingOptions] = useState(true);
+    const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+    const [privacyOptions, setPrivacyOptions] = useState<string[]>(DEFAULT_PRIVACY);
     
     // Sync state if params change
     React.useEffect(() => {
@@ -62,6 +54,21 @@ export default function GoLiveScreen() {
             setAudioMode(params.mode);
         }
     }, [params.mode]);
+
+    // Load create options from backend
+    useEffect(() => {
+        liveStreamService.getCreateOptions()
+            .then((data: any) => {
+                if (data?.categories?.length) {
+                    setCategories(data.categories.map((c: any) => c.label || c.name || c));
+                }
+                if (data?.privacyOptions?.length) {
+                    setPrivacyOptions(data.privacyOptions.map((p: any) => p.label || p.name || p));
+                }
+            })
+            .catch(() => {/* keep defaults */})
+            .finally(() => setLoadingOptions(false));
+    }, []);
     
     // Modal states
     const [category, setCategory] = useState('');
@@ -76,13 +83,18 @@ export default function GoLiveScreen() {
 
     const handleGoLive = async () => {
         try {
-            await liveStreamService.createStream({
+            const result = await liveStreamService.createStream({
                 title: streamTitle || 'Untitled Stream',
-                category: category || 'General',
+                category: category || (categories[0] || 'General'),
                 privacy: privacy,
                 ticketPrice: ticketPrice ? parseFloat(ticketPrice) : 0,
             });
-            router.push(audioMode === 'camera' ? '/go-live-preview' : '/live-dashboard');
+            const streamId = result?.id || result?.stream?.id;
+            if (audioMode === 'camera') {
+                router.push({ pathname: '/go-live-preview', params: streamId ? { id: streamId } : undefined });
+            } else {
+                router.push({ pathname: '/live-dashboard', params: streamId ? { id: streamId } : undefined });
+            }
         } catch (error) {
             console.error('Failed to start stream', error);
         }
@@ -280,7 +292,7 @@ export default function GoLiveScreen() {
             <Modal visible={showCategoryModal} transparent animationType="fade">
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryModal(false)}>
                     <View style={styles.modalContent}>
-                        {CATEGORIES.map((cat, idx) => (
+                        {categories.map((cat: string, idx: number) => (
                             <TouchableOpacity
                                 key={idx}
                                 style={styles.modalOption}
@@ -300,7 +312,7 @@ export default function GoLiveScreen() {
             <Modal visible={showPrivacyModal} transparent animationType="fade">
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPrivacyModal(false)}>
                     <View style={styles.modalContent}>
-                        {PRIVACY_OPTIONS.map((opt, idx) => {
+                        {privacyOptions.map((opt: string, idx: number) => {
                             const isSelected = privacy === opt;
                             return (
                                 <TouchableOpacity

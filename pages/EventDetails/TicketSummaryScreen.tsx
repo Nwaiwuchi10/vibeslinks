@@ -16,13 +16,15 @@ import { ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { setLastPurchase } from '@/store/slices/eventSlice';
+import { stripeService } from '@/services/stripeService';
 import { eventService } from '@/services/eventService';
 
 export default function TicketSummaryScreen() {
-    const { id } = useLocalSearchParams<{ id?: string }>();
+    const { id, paymentMethod: pmParam, paymentMethodId: pmIdParam } = useLocalSearchParams<{ id?: string; paymentMethod?: string; paymentMethodId?: string }>();
     const dispatch = useDispatch();
     const [showPayment, setShowPayment] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
+    const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>(pmParam === 'wallet' ? 'wallet' : 'stripe');
+    const [paymentMethodId, setPaymentMethodId] = useState<string | undefined>(pmIdParam || undefined);
     const [isPaying, setIsPaying] = useState(false);
 
     const bookingInfo = useSelector((state: RootState) => state.event.bookingInfo);
@@ -71,20 +73,42 @@ export default function TicketSummaryScreen() {
     const total = subtotal + fee;
 
     const handlePay = async () => {
-        if (isPaying) return;
+        if (isPaying || !bookingInfo || !event) return;
         setIsPaying(true);
         try {
-            const payload = {
-                items: selectedTierIds.map(tierId => ({
-                    tierId,
-                    quantity: bookingInfo.selectedTiers[tierId],
-                })),
-                paymentMethod: paymentMethod === 'card' ? 'stripe-card' : 'bank-transfer',
-                buyer: bookingInfo.buyer,
-            };
+            const eventId = id || event.id;
+            // Use first selected tier for intent (backend maps multi-tier internally)
+            const firstTierId = selectedTierIds[0];
+            const firstQty = bookingInfo.selectedTiers[firstTierId] || 1;
 
-            const res = await eventService.purchaseTickets(id || event.id, payload);
-            dispatch(setLastPurchase(res));
+            if (paymentMethod === 'stripe') {
+                // Step 1: Create Stripe PaymentIntent
+                await stripeService.createTicketIntent(eventId, {
+                    ticketTierId: firstTierId,
+                    quantity: firstQty,
+                    buyer: bookingInfo.buyer,
+                });
+                // Step 2: Purchase (backend confirms on its side)
+                const res = await stripeService.purchaseTickets(eventId, {
+                    ticketTierId: firstTierId,
+                    quantity: firstQty,
+                    buyer: bookingInfo.buyer,
+                    paymentMethod: 'stripe',
+                    paymentMethodId: paymentMethodId,
+                });
+                dispatch(setLastPurchase(res));
+            } else {
+                // Wallet payment
+                const res = await eventService.purchaseTickets(eventId, {
+                    items: selectedTierIds.map(tierId => ({
+                        tierId,
+                        quantity: bookingInfo.selectedTiers[tierId],
+                    })),
+                    paymentMethod: 'wallet',
+                });
+                dispatch(setLastPurchase(res));
+            }
+
             setShowPayment(false);
             router.push('/booking-success');
         } catch (err) {
@@ -175,9 +199,11 @@ export default function TicketSummaryScreen() {
                 <View style={styles.paymentRow}>
                     <View style={styles.paymentLeft}>
                         <MaterialCommunityIcons name="credit-card-outline" size={22} color="#888" />
-                        <Text style={styles.paymentLabel}>{paymentMethod === 'card' ? 'Debit Card' : 'Transfer'}</Text>
+                        <Text style={styles.paymentLabel}>
+                            {paymentMethod === 'wallet' ? 'Wallet' : paymentMethodId ? `Card •••• ${paymentMethodId.slice(-4)}` : 'Debit Card'}
+                        </Text>
                     </View>
-                    <TouchableOpacity style={styles.changeRow} onPress={() => setShowPayment(true)}>
+                    <TouchableOpacity style={styles.changeRow} onPress={() => router.push({ pathname: '/payment-method', params: { id } })}>
                         <Text style={styles.changeText}>Change</Text>
                         <Ionicons name="chevron-forward-circle" size={18} color="#8E2DE2" />
                     </TouchableOpacity>
@@ -239,16 +265,16 @@ export default function TicketSummaryScreen() {
                         </TouchableOpacity>
 
                         <View style={styles.payMethodOptions}>
-                            <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('card')}>
+                            <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('stripe')}>
                                 <Text style={styles.payMethodLabel}>Debit Card (Stripe)</Text>
-                                <View style={[styles.radioOuter, paymentMethod === 'card' && styles.radioOuterSelected]}>
-                                    {paymentMethod === 'card' && <View style={styles.radioInner} />}
+                                <View style={[styles.radioOuter, paymentMethod === 'stripe' && styles.radioOuterSelected]}>
+                                    {paymentMethod === 'stripe' && <View style={styles.radioInner} />}
                                 </View>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('transfer')}>
-                                <Text style={styles.payMethodLabel}>Transfer (Manual)</Text>
-                                <View style={[styles.radioOuter, paymentMethod === 'transfer' && styles.radioOuterSelected]}>
-                                    {paymentMethod === 'transfer' && <View style={styles.radioInner} />}
+                            <TouchableOpacity style={styles.payMethodRow} onPress={() => setPaymentMethod('wallet')}>
+                                <Text style={styles.payMethodLabel}>VibezLink Wallet</Text>
+                                <View style={[styles.radioOuter, paymentMethod === 'wallet' && styles.radioOuterSelected]}>
+                                    {paymentMethod === 'wallet' && <View style={styles.radioInner} />}
                                 </View>
                             </TouchableOpacity>
                         </View>

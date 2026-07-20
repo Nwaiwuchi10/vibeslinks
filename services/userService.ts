@@ -222,7 +222,39 @@ export const userService = {
     return response.data;
   },
 
-  async uploadProfilePicture(profilePictureUrl: string) {
-    return (await apiClient.post('/users/me/profile-picture', { profilePictureUrl })).data;
+  async uploadProfilePicture(fileUri: string) {
+    // Backend expects multipart/form-data with a real file — not a JSON URL
+    const ext = fileUri.split('.').pop()?.toLowerCase() || 'jpg';
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+    const formData = new FormData();
+    formData.append('profilePicture', {
+      uri: fileUri,
+      name: `profile-picture.${ext}`,
+      type: mimeType,
+    } as any);
+
+    const response = await apiClient.post('/users/me/profile-picture', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  async getFollowers() {
+    try {
+      const response = await apiClient.get('/host-dashboard/audience/followers', { silent: true });
+      return response.data?.followers || response.data?.items || response.data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getFollowing() {
+    try {
+      const response = await apiClient.get('/host-dashboard/audience/following', { silent: true });
+      return response.data?.following || response.data?.items || response.data || [];
+    } catch {
+      return [];
+    }
   },
 };

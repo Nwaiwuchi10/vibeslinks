@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Dimensions,
     Image,
@@ -11,10 +11,15 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
+import { socketService } from '@/services/socketService';
+import { useAppSelector } from '@/store/hooks';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,66 +32,123 @@ interface ChatMessage {
 }
 
 export default function LiveDetails() {
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const authUser = useAppSelector((state) => state.auth.user);
+    
     // Flow States: 'TICKET_MODAL' -> 'PAYMENT_SHEET' -> 'LIVE_STREAM'
-    const [flowState, setFlowState] = useState<'TICKET_MODAL' | 'PAYMENT_SHEET' | 'LIVE_STREAM'>('TICKET_MODAL');
-    const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
+    const [flowState, setFlowState] = useState<'TICKET_MODAL' | 'PAYMENT_SHEET' | 'LIVE_STREAM'>('LIVE_STREAM');
+    const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>('wallet');
     const [isFollowing, setIsFollowing] = useState(false);
     const [showRequestSentModal, setShowRequestSentModal] = useState(false);
     const [showEndLiveModal, setShowEndLiveModal] = useState(false);
-    const [hasGuestStream, setHasGuestStream] = useState(true);
+    const [hasGuestStream, setHasGuestStream] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [reactionCounts, setReactionCounts] = useState({
-        heart: 12000,
-        smile: 37000,
-        angry: 15000,
-        star: 91000,
-        clap: 3000,
+    const [loadingDetails, setLoadingDetails] = useState(true);
+    const [streamDetails, setStreamDetails] = useState<any>(null);
+
+    const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({
+        heart: 0,
+        smile: 0,
+        angry: 0,
+        star: 0,
+        clap: 0,
     });
 
-    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-        {
-            id: '1',
-            avatar: 'https://i.pravatar.cc/150?img=47',
-            username: '@claudiocardoso',
-            message: 'send reaction',
-            reaction: '😁',
-        },
-        {
-            id: '2',
-            avatar: 'https://i.pravatar.cc/150?img=12',
-            username: '@claudiocardoso',
-            message: 'Lovely',
-        },
-        {
-            id: '3',
-            avatar: 'https://i.pravatar.cc/150?img=47',
-            username: '@claudiocardoso',
-            message: 'Who else dey vibing tonight',
-        },
-    ]);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const chatScrollViewRef = useRef<ScrollView>(null);
 
+    useEffect(() => {
+        if (!id) return;
+        
+        // Step 1: Load stream details
+        liveStreamService.getStreamDetails(id)
+            .then((data: any) => {
+                setStreamDetails(data);
+                
+                // If it's a paid stream and user hasn't paid, prompt ticket modal
+                if (data.ticketPrice > 0 && !data.hasAccess) {
+                    setFlowState('TICKET_MODAL');
+                } else {
+                    setFlowState('LIVE_STREAM');
+                }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingDetails(false));
+
+        // Step 2: Join websocket stream room
+        socketService.joinLiveStream(id);
+
+        // Step 3: Setup real-time listeners
+        socketService.onLiveStreamMessage((msg: any) => {
+            const parsedMsg: ChatMessage = {
+                id: msg.id || String(Math.random()),
+                avatar: msg.senderAvatar || msg.avatar || `https://i.pravatar.cc/100?img=${Math.floor(Math.random() * 50)}`,
+                username: msg.senderName || msg.username || 'Viewer',
+                message: msg.message,
+            };
+            setChatMessages((prev) => [...prev, parsedMsg]);
+            setTimeout(() => chatScrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        });
+
+        socketService.onLiveStreamUpdate((data: any) => {
+            if (data.viewerCount != null && streamDetails) {
+                setStreamDetails((prev: any) => ({ ...prev, viewerCount: data.viewerCount }));
+            }
+            if (data.reactions) {
+                setReactionCounts(prev => ({ ...prev, ...data.reactions }));
+            }
+        });
+
+        return () => {
+            socketService.leaveLiveStream(id);
+            socketService.offLiveStreamEvents();
+        };
+    }, [id]);
+
     const handleSendMessage = () => {
-        if (!newMessage.trim()) return;
-        const msg: ChatMessage = {
+        if (!newMessage.trim() || !id) return;
+        // Emit over socket
+        socketService.sendLiveStreamMessage(id, newMessage);
+
+        // Append locally immediately
+        const localMsg: ChatMessage = {
             id: Date.now().toString(),
-            avatar: 'https://i.pravatar.cc/150?img=33',
-            username: '@you',
+            avatar: authUser?.profilePictureUrl || 'https://i.pravatar.cc/150?img=33',
+            username: authUser?.fullName ? `@${authUser.fullName}` : '@you',
             message: newMessage,
         };
-        setChatMessages((prev) => [...prev, msg]);
+        setChatMessages((prev) => [...prev, localMsg]);
         setNewMessage('');
         setTimeout(() => {
             chatScrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
     };
 
-    const handleReaction = (type: keyof typeof reactionCounts) => {
+    const handleReaction = (emoji: 'love' | 'clap' | 'like' | 'fire') => {
+        if (!id) return;
+        // Emit over socket
+        socketService.sendLiveStreamReaction(id, emoji);
+
+        const mappedKey = emoji === 'love' ? 'heart' : emoji === 'like' ? 'smile' : emoji;
         setReactionCounts((prev) => ({
             ...prev,
-            [type]: prev[type] + 1,
+            [mappedKey]: (prev[mappedKey] || 0) + 1,
         }));
+    };
+
+    const handleBuyAccess = async () => {
+        if (!id) return;
+        setLoadingDetails(true);
+        try {
+            await liveStreamService.checkAccess(id, paymentMethod);
+            setFlowState('LIVE_STREAM');
+            Alert.alert('Access Granted', 'You now have access to this stream.');
+        } catch (err: any) {
+            Alert.alert('Payment Failed', err.response?.data?.message || 'Failed to complete transaction.');
+        } finally {
+            setLoadingDetails(false);
+        }
     };
 
     return (
@@ -109,14 +171,14 @@ export default function LiveDetails() {
 
                         <View style={styles.creatorPill}>
                             <Image
-                                source={{ uri: 'https://i.pravatar.cc/150?img=43' }}
+                                source={streamDetails?.creator?.profilePictureUrl || streamDetails?.creatorAvatarUrl ? { uri: streamDetails.creator?.profilePictureUrl || streamDetails.creatorAvatarUrl } : require('../../assets/images/ye.png')}
                                 style={styles.creatorAvatar}
                             />
                             <View style={styles.creatorInfo}>
-                                <Text style={styles.creatorName}>Olivia</Text>
+                                <Text style={styles.creatorName} numberOfLines={1}>{streamDetails?.creator?.name || streamDetails?.creatorName || 'Olivia'}</Text>
                                 <View style={styles.creatorLikesRow}>
                                     <Ionicons name="heart" size={10} color="#FFF" />
-                                    <Text style={styles.creatorLikesText}>1.1k</Text>
+                                    <Text style={styles.creatorLikesText}>{reactionCounts['heart'] || 0}</Text>
                                 </View>
                             </View>
                             <TouchableOpacity
@@ -129,7 +191,7 @@ export default function LiveDetails() {
                             </TouchableOpacity>
                         </View>
 
-                        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/live-creators')}>
+                        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/live-creators' as any)}>
                             <Ionicons name="chevron-down" size={22} color="#FFF" />
                         </TouchableOpacity>
                     </View>
@@ -209,24 +271,24 @@ export default function LiveDetails() {
                             <View style={styles.statsAndReactionsRow}>
                                 <View style={styles.watchingBadge}>
                                     <Ionicons name="people-outline" size={12} color="#FFF" style={{ marginRight: 4 }} />
-                                    <Text style={styles.watchingText}>41.9K Watching</Text>
+                                    <Text style={styles.watchingText}>{streamDetails?.viewerCount ?? 0} Watching</Text>
                                 </View>
-
+ 
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reactionsScrollView}>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('smile')}>
-                                        <Text style={styles.reactionText}>😍 37k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('like')}>
+                                        <Text style={styles.reactionText}>😍 {reactionCounts['smile'] || 0}</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('heart')}>
-                                        <Text style={styles.reactionText}>❤️ 12k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('love')}>
+                                        <Text style={styles.reactionText}>❤️ {reactionCounts['heart'] || 0}</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('angry')}>
-                                        <Text style={styles.reactionText}>😡 15k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('angry' as any)}>
+                                        <Text style={styles.reactionText}>😡 {reactionCounts['angry'] || 0}</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('star')}>
-                                        <Text style={styles.reactionText}>🤩 91k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('fire')}>
+                                        <Text style={styles.reactionText}>🤩 {reactionCounts['star'] || 0}</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('clap')}>
-                                        <Text style={styles.reactionText}>👏 3k</Text>
+                                        <Text style={styles.reactionText}>👏 {reactionCounts['clap'] || 0}</Text>
                                     </TouchableOpacity>
                                 </ScrollView>
                             </View>
@@ -241,7 +303,7 @@ export default function LiveDetails() {
                                     onChangeText={setNewMessage}
                                     onSubmitEditing={handleSendMessage}
                                 />
-                                <TouchableOpacity style={styles.inputPlainButton} onPress={() => handleReaction('heart')}>
+                                <TouchableOpacity style={styles.inputPlainButton} onPress={() => handleReaction('love')}>
                                     <Ionicons name="heart-outline" size={26} color="#FFF" />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.inputPlainButton} onPress={handleSendMessage}>
@@ -329,28 +391,27 @@ export default function LiveDetails() {
                             <Text style={styles.paymentHeading}>Payment Method</Text>
                             <Ionicons name="chevron-forward" size={14} color="#8E2DE2" />
                         </View>
-
                         <TouchableOpacity
                             style={styles.paymentMethodOption}
-                            onPress={() => setPaymentMethod('card')}
+                            onPress={() => setPaymentMethod('stripe')}
                         >
-                            <Text style={styles.paymentOptionLabel}>Debit Card</Text>
+                            <Text style={styles.paymentOptionLabel}>Debit Card (Stripe)</Text>
                             <View style={styles.radioOuter}>
-                                {paymentMethod === 'card' && <View style={styles.radioInner} />}
+                                {paymentMethod === 'stripe' && <View style={styles.radioInner} />}
                             </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity
                             style={styles.paymentMethodOption}
-                            onPress={() => setPaymentMethod('transfer')}
+                            onPress={() => setPaymentMethod('wallet')}
                         >
-                            <Text style={styles.paymentOptionLabel}>Transfer</Text>
+                            <Text style={styles.paymentOptionLabel}>VibezLink Wallet</Text>
                             <View style={styles.radioOuter}>
-                                {paymentMethod === 'transfer' && <View style={styles.radioInner} />}
+                                {paymentMethod === 'wallet' && <View style={styles.radioInner} />}
                             </View>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.payBtn} onPress={() => setFlowState('LIVE_STREAM')}>
+                        <TouchableOpacity style={styles.payBtn} onPress={handleBuyAccess}>
                             <Text style={styles.payBtnText}>Pay</Text>
                         </TouchableOpacity>
                     </View>

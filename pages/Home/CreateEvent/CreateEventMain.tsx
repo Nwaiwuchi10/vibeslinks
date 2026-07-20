@@ -104,7 +104,7 @@ const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
           ageRestriction: eventData.ageRestriction || undefined,
           refundPolicy: eventData.refundPolicy || undefined,
           ticketTiers: eventData.ticketTiers,
-          artistes: [],
+          artistes: (eventData.artisteIds || []).map(id => ({ id })),
           sponsors: [],
           faqs: [],
         };

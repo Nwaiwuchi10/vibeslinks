@@ -1,15 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../constants/Colors';
 import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
 
-const MOCK_LIVE_CREATORS = [
-  { id: '1', title: 'Join me with the paint of art', name: 'Olivia', time: '. 3m', image: require('../../../assets/images/ye.png'), avatar: 'https://i.pravatar.cc/150?img=43', viewerCount: null },
-  { id: '2', title: 'President BOIC advised the for 2024. Join', name: 'Wizzooko', time: '. 2m', image: require('../../../assets/images/skibi.png'), avatar: 'https://i.pravatar.cc/150?img=15', viewerCount: null },
-  { id: '3', title: 'Cooking up some afrobeats', name: 'DJ Snake', time: '. 5m', image: require('../../../assets/images/modu.png'), avatar: 'https://i.pravatar.cc/150?img=60', viewerCount: null },
-];
 
 const LiveCreators = () => {
   const [creators, setCreators] = useState<any[]>([]);
@@ -18,21 +13,19 @@ const LiveCreators = () => {
   useEffect(() => {
     homeService.getCreatorsOnLive()
       .then(setCreators)
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  // Map backend data to display shape; fallback to mocks when empty
-  const displayCreators = creators.length > 0
-    ? creators.map((c: any) => ({
-        id: c.id || c.streamId || String(Math.random()),
-        title: c.title || c.streamTitle || 'Live now',
-        name: c.creatorName || c.name || c.creator?.name || c.creator?.username || 'Creator',
-        time: c.viewerCount != null ? `${c.viewerCount} viewers` : '. live',
-        coverUrl: c.coverUrl || c.thumbnailUrl || c.creator?.profilePictureUrl || null,
-        avatar: c.creatorAvatarUrl || c.creator?.profilePictureUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
-        viewerCount: c.viewerCount || null,
-      }))
-    : MOCK_LIVE_CREATORS;
+  const displayCreators = creators.map((c: any) => ({
+    id: c.id || c.streamId || String(Math.random()),
+    title: c.title || c.streamTitle || 'Live now',
+    name: c.creatorName || c.name || c.creator?.name || c.creator?.username || 'Creator',
+    time: c.viewerCount != null ? `${c.viewerCount} viewers` : '. live',
+    coverUrl: c.coverUrl || c.thumbnailUrl || c.creator?.profilePictureUrl || null,
+    avatar: c.creatorAvatarUrl || c.creator?.profilePictureUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
+    viewerCount: c.viewerCount || null,
+  }));
 
   return (
     <View style={styles.container}>
@@ -42,24 +35,28 @@ const LiveCreators = () => {
           <Text style={styles.seeAllText}>See all <Ionicons name="chevron-forward" size={12} /></Text>
         </TouchableOpacity>
       </View>
+
+      {loading ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveContainer}>
+          {[1, 2, 3].map((i) => (
+            <View key={i} style={[styles.liveCard, styles.liveCardPlaceholder, { backgroundColor: '#E8E8E8' }]} />
+          ))}
+        </ScrollView>
+      ) : displayCreators.length === 0 ? (
+        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+          <Text style={{ color: '#BBB', fontSize: 13 }}>No creators live right now</Text>
+        </View>
+      ) : (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveContainer}>
         {displayCreators.map((live: any) => (
           <TouchableOpacity
             key={live.id}
             activeOpacity={0.9}
-            onPress={() => router.push('/live-details')}
+            onPress={() => router.push({ pathname: '/watch-stream', params: { id: live.id } })}
           >
             {live.coverUrl ? (
               <ImageBackground
                 source={{ uri: live.coverUrl }}
-                style={styles.liveCard}
-                imageStyle={{ borderRadius: 12 }}
-              >
-                <LiveCardOverlay live={live} />
-              </ImageBackground>
-            ) : live.image ? (
-              <ImageBackground
-                source={live.image}
                 style={styles.liveCard}
                 imageStyle={{ borderRadius: 12 }}
               >
@@ -73,6 +70,7 @@ const LiveCreators = () => {
           </TouchableOpacity>
         ))}
       </ScrollView>
+      )}
     </View>
   );
 };

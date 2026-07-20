@@ -14,6 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { liveStreamService } from '@/services/liveStreamService';
+import { homeService } from '@/services/homeService';
 
 const { width } = Dimensions.get('window');
 
@@ -24,34 +25,27 @@ const QUICK_ACTIONS = [
   { id: '4', name: 'Watch Stream', icon: 'television-play', color: '#FF006B' },
 ];
 
-const STREAM_FEED = [
-  { 
-    id: '1', 
-    user: 'Olivia', 
-    likes: '1.1k', 
-    type: 'Paid', 
-    avatar: 'https://i.pravatar.cc/100?img=11', 
-    image: require('../../../assets/images/artist_event.png') 
-  },
-  { 
-    id: '2', 
-    user: 'Roland', 
-    likes: '9.4k', 
-    type: 'Free', 
-    avatar: 'https://i.pravatar.cc/100?img=12', 
-    image: require('../../../assets/images/tiger_event.png') 
-  },
-];
-
 const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCreateEventPress: () => void }) => {
   const [feed, setFeed] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [advert, setAdvert] = useState<any>(null);
 
   useEffect(() => {
     const fetchFeed = async () => {
       try {
-        const data = await liveStreamService.getWatchFeed();
-        setFeed(data?.items || data || []);
+        const [feedData, adverts] = await Promise.allSettled([
+          liveStreamService.getWatchFeed(),
+          homeService.getAdverts(),
+        ]);
+        if (feedData.status === 'fulfilled') {
+          const items = Array.isArray(feedData.value)
+            ? feedData.value
+            : feedData.value?.items || feedData.value?.streams || [];
+          setFeed(items);
+        }
+        if (adverts.status === 'fulfilled' && (adverts.value as any[]).length > 0) {
+          setAdvert((adverts.value as any[])[0]);
+        }
       } catch (error) {
         console.error('Failed to fetch stream feed:', error);
       } finally {
@@ -61,7 +55,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
     fetchFeed();
   }, []);
 
-  const displayFeed = feed.length > 0 ? feed : STREAM_FEED;
+  const displayFeed = feed;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -102,19 +96,22 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
         </View>
 
         {/* Ad Banner */}
-        <TouchableOpacity style={styles.adBanner}>
+        <TouchableOpacity
+          style={styles.adBanner}
+          onPress={() => advert?.id && router.push({ pathname: '/event-details', params: { id: advert.id } })}
+        >
           <Image 
-            source={{ uri: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }} 
+            source={{ uri: advert?.imageUrl || advert?.image || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }} 
             style={styles.adImage} 
           />
           <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']} style={styles.adOverlay}>
             <View style={styles.adHeader}>
-              <View style={styles.adBadge}><Text style={styles.adBadgeText}>NIGHTLIFE</Text></View>
+              <View style={styles.adBadge}><Text style={styles.adBadgeText}>{((advert?.category || 'NIGHTLIFE') as string).toUpperCase()}</Text></View>
               <View style={styles.adSmallBadge}><Text style={styles.adSmallBadgeText}>Ad</Text></View>
             </View>
             <View style={styles.adFooter}>
-              <Text style={styles.adTitle}>Worship De King <Ionicons name="arrow-forward-circle" size={16} /></Text>
-              <Text style={styles.adPrice}>₦15,000</Text>
+              <Text style={styles.adTitle}>{advert?.title || 'Worship De King'} <Ionicons name="arrow-forward-circle" size={16} /></Text>
+              <Text style={styles.adPrice}>{advert?.price ? `₦${Number(advert.price).toLocaleString()}` : '₦15,000'}</Text>
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -122,23 +119,41 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
         {/* Feed */}
         {loading ? (
           <ActivityIndicator size="large" color="#8E2DE2" style={{ marginTop: 40 }} />
+        ) : displayFeed.length === 0 ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="television-off" size={48} color="#DDD" />
+            <Text style={{ color: '#999', marginTop: 12, fontSize: 14 }}>No live streams available right now</Text>
+          </View>
         ) : (
           displayFeed.map((post: any, index: number) => {
-            const isMock = post.id === '1' || post.id === '2'; // Simple check to see if it's our mock data
+            const coverUri = post.coverUrl || post.thumbnailUrl || post.imageUrl;
+            const avatar = post.creator?.profilePictureUrl || post.hostAvatar || post.creatorAvatarUrl || `https://i.pravatar.cc/100?img=${index + 10}`;
+            const name = post.creator?.name || post.creatorName || post.hostName || post.user || 'Creator';
+            const viewers = post.viewerCount ?? post.likes ?? 0;
+            const isPaid = post.ticketPrice > 0 || post.type === 'Paid';
             return (
-              <TouchableOpacity key={post.id || index} style={styles.feedCard} activeOpacity={0.92} onPress={() => router.push({ pathname: '/live-details', params: { id: post.id } })}>
-                <Image source={isMock ? post.image : { uri: post.coverUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819' }} style={styles.feedImage} />
+              <TouchableOpacity
+                key={post.id || index}
+                style={styles.feedCard}
+                activeOpacity={0.92}
+                onPress={() => post.id && router.push({ pathname: '/watch-stream', params: { id: post.id } })}
+              >
+                {coverUri ? (
+                  <Image source={{ uri: coverUri }} style={styles.feedImage} />
+                ) : (
+                  <Image source={require('../../../assets/images/artist_event.png')} style={styles.feedImage} />
+                )}
                 <View style={styles.cardHeader}>
                   <View style={styles.userInfo}>
-                    <Image source={{ uri: isMock ? post.avatar : (post.hostAvatar || 'https://i.pravatar.cc/100') }} style={styles.userAvatar} />
-                    <Text style={styles.userName}>{isMock ? post.user : (post.hostName || 'Creator')}</Text>
+                    <Image source={{ uri: avatar }} style={styles.userAvatar} />
+                    <Text style={styles.userName}>{name}</Text>
                     <View style={styles.likeInfo}>
                       <Ionicons name="eye" size={12} color="#FFF" />
-                      <Text style={styles.likeText}>{isMock ? post.likes : (post.viewerCount || 0)}</Text>
+                      <Text style={styles.likeText}>{typeof viewers === 'number' ? viewers.toLocaleString() : viewers}</Text>
                     </View>
                   </View>
-                  <View style={[styles.typeBadge, { backgroundColor: (isMock ? post.type === 'Paid' : post.ticketPrice > 0) ? '#8E2DE2' : '#7F36FF' }]}>
-                    <Text style={styles.typeText}>{(isMock ? post.type : (post.ticketPrice > 0 ? 'Paid' : 'Free'))}</Text>
+                  <View style={[styles.typeBadge, { backgroundColor: isPaid ? '#8E2DE2' : '#7F36FF' }]}>
+                    <Text style={styles.typeText}>{isPaid ? 'Paid' : 'Free'}</Text>
                   </View>
                 </View>
               </TouchableOpacity>

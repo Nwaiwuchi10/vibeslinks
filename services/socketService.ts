@@ -48,6 +48,22 @@ class SocketService {
     });
   }
 
+  onLiveStreamUpdate(callback: (data: any) => void) {
+    if (!this.socket) return;
+    this.socket.on('liveStreamUpdate', callback);
+  }
+
+  onLiveStreamMessage(callback: (msg: any) => void) {
+    if (!this.socket) return;
+    this.socket.on('liveMessage', callback);
+  }
+
+  offLiveStreamEvents() {
+    if (!this.socket) return;
+    this.socket.off('liveStreamUpdate');
+    this.socket.off('liveMessage');
+  }
+
   joinConversation(conversationId: string) {
     if (!this.socket?.connected) {
       console.warn('[SocketService] Socket not connected. Cannot join conversation.');
@@ -61,6 +77,28 @@ class SocketService {
     if (!this.socket?.connected) return;
     console.log(`[SocketService] Leaving conversation: ${conversationId}`);
     this.socket.emit('leaveRoom', { conversationId });
+  }
+
+  joinLiveStream(streamId: string) {
+    if (!this.socket?.connected) return;
+    console.log(`[SocketService] Joining live stream room: ${streamId}`);
+    this.socket.emit('joinRoom', { conversationId: `stream_${streamId}` });
+  }
+
+  leaveLiveStream(streamId: string) {
+    if (!this.socket?.connected) return;
+    console.log(`[SocketService] Leaving live stream room: ${streamId}`);
+    this.socket.emit('leaveRoom', { conversationId: `stream_${streamId}` });
+  }
+
+  sendLiveStreamMessage(streamId: string, messageText: string) {
+    if (!this.socket?.connected) return;
+    this.socket.emit('liveMessage', { streamId, message: messageText });
+  }
+
+  sendLiveStreamReaction(streamId: string, emoji: 'love' | 'clap' | 'like' | 'fire') {
+    if (!this.socket?.connected) return;
+    this.socket.emit('liveReaction', { streamId, emoji });
   }
 
   disconnect() {

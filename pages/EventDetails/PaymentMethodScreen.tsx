@@ -1,28 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { stripeService } from '@/services/stripeService';
+import { Colors } from '@/constants/Colors';
 
-type PaymentOption = 'paypal' | 'google' | 'apple' | null;
 
 export default function PaymentMethodScreen() {
-    const [selectedOption, setSelectedOption] = useState<PaymentOption>(null);
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const [loading, setLoading] = useState(true);
+    const [savedCards, setSavedCards] = useState<any[]>([]);
+    const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+    const [walletSelected, setWalletSelected] = useState(false);
+    const [wallet, setWallet] = useState<any>(null);
 
-    const MORE_OPTIONS = [
-        { id: 'paypal' as PaymentOption, label: 'Paypal', icon: '🅿️', color: '#003087' },
-        { id: 'google' as PaymentOption, label: 'Google', icon: '🅶', color: '#EA4335' },
-        { id: 'apple' as PaymentOption, label: 'Apple Pay', icon: '🍎', color: '#000' },
-    ];
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const [cards, walletData] = await Promise.allSettled([
+                    stripeService.getPaymentMethods(),
+                    stripeService.getWallet(),
+                ]);
+                if (cards.status === 'fulfilled') {
+                    setSavedCards(cards.value);
+                    const def = (cards.value as any[]).find((c: any) => c.isDefault);
+                    if (def) setSelectedCardId(def.id);
+                }
+                if (walletData.status === 'fulfilled') {
+                    setWallet(walletData.value);
+                }
+            } catch (err) {
+                console.warn('[PaymentMethod] Load error:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, []);
+
+    const handleContinue = () => {
+        if (!selectedCardId && !walletSelected) {
+            Alert.alert('Select Payment', 'Please select a payment method to continue.');
+            return;
+        }
+        const method = walletSelected ? 'wallet' : 'stripe';
+        const methodId = walletSelected ? undefined : selectedCardId;
+        // Store selection then go to ticket summary
+        router.push({ pathname: '/ticket-summary', params: { id, paymentMethod: method, paymentMethodId: methodId ?? '' } });
+    };
+
+    const cardBrandIcon = (brand: string) => {
+        switch (brand?.toLowerCase()) {
+            case 'visa': return 'credit-card';
+            case 'mastercard': return 'credit-card-chip';
+            default: return 'credit-card-outline';
+        }
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={20} color="#333" />
@@ -31,88 +75,75 @@ export default function PaymentMethodScreen() {
                 <View style={{ width: 44 }} />
             </View>
 
-            <View style={styles.content}>
-                {/* Credit & Debit Card Section */}
-                <Text style={styles.sectionLabel}>Credit & Debit Card</Text>
-                <View style={styles.cardSection}>
-                    <TouchableOpacity
-                        style={styles.cardRow}
-                        onPress={() => router.push('/add-card-ticket')}
-                        activeOpacity={0.8}
-                    >
-                        <View style={styles.cardLeft}>
-                            <MaterialCommunityIcons name="credit-card-outline" size={22} color="#8E2DE2" />
-                            <Text style={styles.cardLabel}>Card</Text>
+            {loading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+            ) : (
+                <View style={styles.content}>
+                    {/* Wallet Option */}
+                    {wallet && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionLabel}>Wallet</Text>
+                            <TouchableOpacity
+                                style={[styles.cardRow, walletSelected && styles.cardRowSelected]}
+                                onPress={() => { setWalletSelected(true); setSelectedCardId(null); }}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.cardLeft}>
+                                    <Ionicons name="wallet-outline" size={22} color="#8E2DE2" />
+                                    <View style={{ marginLeft: 12 }}>
+                                        <Text style={styles.cardLabel}>VibezLink Wallet</Text>
+                                        <Text style={styles.cardSub}>Balance: ₦{Number(wallet.balance || 0).toLocaleString()}</Text>
+                                    </View>
+                                </View>
+                                <View style={[styles.radioOuter, walletSelected && styles.radioSelected]}>
+                                    {walletSelected && <View style={styles.radioInner} />}
+                                </View>
+                            </TouchableOpacity>
                         </View>
-                        <Ionicons name="arrow-forward" size={20} color="#888" />
-                    </TouchableOpacity>
+                    )}
+
+                    {/* Saved Cards */}
+                    <View style={styles.section}>
+                        <Text style={styles.sectionLabel}>Credit & Debit Card</Text>
+                        {savedCards.map((card: any) => (
+                            <TouchableOpacity
+                                key={card.id}
+                                style={[styles.cardRow, selectedCardId === card.id && styles.cardRowSelected]}
+                                onPress={() => { setSelectedCardId(card.id); setWalletSelected(false); }}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.cardLeft}>
+                                    <MaterialCommunityIcons name={cardBrandIcon(card.brand) as any} size={22} color="#8E2DE2" />
+                                    <View style={{ marginLeft: 12 }}>
+                                        <Text style={styles.cardLabel}>{(card.brand || 'Card').toUpperCase()} •••• {card.last4}</Text>
+                                        <Text style={styles.cardSub}>Expires {card.expMonth}/{card.expYear}</Text>
+                                    </View>
+                                </View>
+                                <View style={[styles.radioOuter, selectedCardId === card.id && styles.radioSelected]}>
+                                    {selectedCardId === card.id && <View style={styles.radioInner} />}
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+
+                        {/* Add new card */}
+                        <TouchableOpacity
+                            style={styles.cardRow}
+                            onPress={() => router.push({ pathname: '/add-card-ticket', params: { id } })}
+                            activeOpacity={0.8}
+                        >
+                            <View style={styles.cardLeft}>
+                                <Ionicons name="add-circle-outline" size={22} color="#8E2DE2" />
+                                <Text style={[styles.cardLabel, { marginLeft: 12 }]}>Add New Card</Text>
+                            </View>
+                            <Ionicons name="arrow-forward" size={20} color="#888" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
+            )}
 
-                {/* More Payment Options */}
-                <View style={styles.moreSection}>
-                    <Text style={styles.moreSectionTitle}>More Payment Options</Text>
-
-                    {/* Paypal */}
-                    <TouchableOpacity
-                        style={styles.optionRow}
-                        onPress={() => setSelectedOption('paypal')}
-                        activeOpacity={0.8}
-                    >
-                        <View style={styles.optionLeft}>
-                            <View style={[styles.paypalIcon]}>
-                                <Text style={styles.paypalP}>P</Text>
-                            </View>
-                            <Text style={styles.optionLabel}>Paypal</Text>
-                        </View>
-                        <View style={[styles.radioOuter, selectedOption === 'paypal' && styles.radioSelected]}>
-                            {selectedOption === 'paypal' && <View style={styles.radioInner} />}
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Google Pay */}
-                    <TouchableOpacity
-                        style={styles.optionRow}
-                        onPress={() => setSelectedOption('google')}
-                        activeOpacity={0.8}
-                    >
-                        <View style={styles.optionLeft}>
-                            <View style={styles.googleIcon}>
-                                <Text style={styles.googleG}>G</Text>
-                            </View>
-                            <Text style={styles.optionLabel}>Google</Text>
-                        </View>
-                        <View style={[styles.radioOuter, selectedOption === 'google' && styles.radioSelected]}>
-                            {selectedOption === 'google' && <View style={styles.radioInner} />}
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Apple Pay */}
-                    <TouchableOpacity
-                        style={styles.optionRow}
-                        onPress={() => setSelectedOption('apple')}
-                        activeOpacity={0.8}
-                    >
-                        <View style={styles.optionLeft}>
-                            <View style={styles.appleIcon}>
-                                <Ionicons name="logo-apple" size={18} color="#000" />
-                            </View>
-                            <Text style={styles.optionLabel}>Apple Pay</Text>
-                        </View>
-                        <View style={[styles.radioOuter, selectedOption === 'apple' && styles.radioSelected]}>
-                            {selectedOption === 'apple' && <View style={styles.radioInner} />}
-                        </View>
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Bottom CTA */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity
-                    style={styles.ctaBtn}
-                    onPress={() => router.back()}
-                    activeOpacity={0.85}
-                >
-                    <Text style={styles.ctaBtnText}>Continue</Text>
+            <View style={styles.footer}>
+                <TouchableOpacity style={styles.continueBtn} onPress={handleContinue}>
+                    <Text style={styles.continueBtnText}>Continue</Text>
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
@@ -120,120 +151,22 @@ export default function PaymentMethodScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#F5F5F7' },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-    },
-    backBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFF',
-        borderWidth: 1,
-        borderColor: '#EBEBEB',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: '#222' },
-    content: { flex: 1, paddingHorizontal: 20, paddingTop: 8 },
-    sectionLabel: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#555',
-        marginBottom: 10,
-    },
-    cardSection: {
-        backgroundColor: '#FFF',
-        borderRadius: 16,
-        marginBottom: 16,
-        overflow: 'hidden',
-    },
-    cardRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 18,
-    },
-    cardLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    cardLabel: { fontSize: 16, color: '#333', fontWeight: '500' },
-    moreSection: {
-        backgroundColor: '#FFF',
-        borderRadius: 16,
-        padding: 18,
-    },
-    moreSectionTitle: {
-        fontSize: 15,
-        fontWeight: '700',
-        color: '#222',
-        marginBottom: 16,
-    },
-    optionRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-    },
-    optionLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    optionLabel: { fontSize: 15, color: '#444', fontWeight: '500' },
-    paypalIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        backgroundColor: '#E8F0FE',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    paypalP: { fontSize: 14, fontWeight: '800', color: '#003087' },
-    googleIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        backgroundColor: '#FEE8E8',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    googleG: { fontSize: 14, fontWeight: '800', color: '#EA4335' },
-    appleIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        backgroundColor: '#F0F0F0',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    radioOuter: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#CCC',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+    safeArea: { flex: 1, backgroundColor: '#F9F9F9' },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+    backBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
+    content: { flex: 1, paddingTop: 10 },
+    section: { backgroundColor: '#FFF', marginHorizontal: 20, marginTop: 16, borderRadius: 16, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+    sectionLabel: { fontSize: 12, fontWeight: '700', color: '#888', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+    cardRowSelected: { backgroundColor: '#F8F0FF' },
+    cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+    cardLabel: { fontSize: 15, fontWeight: '600', color: '#1A1A1A' },
+    cardSub: { fontSize: 12, color: '#999', marginTop: 2 },
+    radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#CCC', justifyContent: 'center', alignItems: 'center' },
     radioSelected: { borderColor: '#8E2DE2' },
     radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#8E2DE2' },
-    bottomBar: {
-        padding: 24,
-        paddingBottom: 36,
-        backgroundColor: '#F5F5F7',
-    },
-    ctaBtn: {
-        backgroundColor: '#8E2DE2',
-        borderRadius: 32,
-        paddingVertical: 18,
-        alignItems: 'center',
-    },
-    ctaBtnText: { color: '#FFF', fontSize: 17, fontWeight: '600' },
+    footer: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F0F0F0' },
+    continueBtn: { backgroundColor: '#8E2DE2', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+    continueBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

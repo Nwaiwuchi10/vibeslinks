@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     Image,
@@ -8,28 +8,57 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
 
 const { width } = Dimensions.get('window');
 
-const STATS = [
-    { label: 'Viewers',  value: '975K' },
-    { label: 'Likes',    value: '6.1M' },
-    { label: 'Comments', value: '103K' },
-    { label: 'Reaction', value: '1.2M' },
-];
-
-const SIMILAR_CREATORS = [
-    { id: '1', name: 'Sophia Carter',  avatar: 'https://i.pravatar.cc/150?img=47' },
-    { id: '2', name: 'Malik Johnson',  avatar: 'https://i.pravatar.cc/150?img=12' },
-    { id: '3', name: 'Elena Rossi',    avatar: 'https://i.pravatar.cc/150?img=9'  },
-    { id: '4', name: 'Hiroshi Tanaka', avatar: 'https://i.pravatar.cc/150?img=55' },
-];
-
 export default function LiveSummaryScreen() {
+    const { id: streamId } = useLocalSearchParams<{ id?: string }>();
+    const [streamData, setStreamData] = useState<any>(null);
+    const [similarCreators, setSimilarCreators] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const [details, watchFeed] = await Promise.allSettled([
+                    streamId ? liveStreamService.getStreamDetails(streamId) : Promise.resolve(null),
+                    liveStreamService.getCreatorsOnLive(),
+                ]);
+                if (details.status === 'fulfilled') setStreamData(details.value);
+                if (watchFeed.status === 'fulfilled') {
+                    const creators = (watchFeed.value as any[]).slice(0, 4).map((c: any) => ({
+                        id: c.id || c.streamId,
+                        name: c.creatorName || c.creator?.name || 'Creator',
+                        avatar: c.creatorAvatarUrl || c.creator?.profilePictureUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
+                    }));
+                    setSimilarCreators(creators);
+                }
+            } catch {}
+            finally { setLoading(false); }
+        };
+        fetchData();
+    }, [streamId]);
+
+    const stats = [
+        { label: 'Viewers',  value: streamData?.viewerCount != null ? String(streamData.viewerCount) : (streamData?.stats?.viewers || '—') },
+        { label: 'Likes',    value: streamData?.reactionCount != null ? String(streamData.reactionCount) : (streamData?.stats?.likes || '—') },
+        { label: 'Comments', value: streamData?.commentCount != null ? String(streamData.commentCount) : (streamData?.stats?.comments || '—') },
+        { label: 'Duration', value: streamData?.durationText || streamData?.duration || '—' },
+    ];
+
+    const displayCreators = similarCreators.length > 0 ? similarCreators : [
+        { id: '1', name: 'Sophia Carter',  avatar: 'https://i.pravatar.cc/150?img=47' },
+        { id: '2', name: 'Malik Johnson',  avatar: 'https://i.pravatar.cc/150?img=12' },
+        { id: '3', name: 'Elena Rossi',    avatar: 'https://i.pravatar.cc/150?img=9'  },
+        { id: '4', name: 'Hiroshi Tanaka', avatar: 'https://i.pravatar.cc/150?img=55' },
+    ];
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
             {/* Decorative bow top-right */}
@@ -58,12 +87,12 @@ export default function LiveSummaryScreen() {
 
                 {/* Stats card */}
                 <View style={styles.statsCard}>
-                    {STATS.map((stat, index) => (
+                    {stats.map((stat, index) => (
                         <View
                             key={stat.label}
                             style={[
                                 styles.statItem,
-                                index < STATS.length - 1 && styles.statItemBorder,
+                                index < stats.length - 1 && styles.statItemBorder,
                             ]}
                         >
                             <Text style={styles.statValue}>{stat.value}</Text>
@@ -87,7 +116,7 @@ export default function LiveSummaryScreen() {
 
                 {/* Same niche creators */}
                 <Text style={styles.sectionTitle}>Creators on the same niche</Text>
-                {SIMILAR_CREATORS.map((creator) => (
+                {displayCreators.map((creator: any) => (
                     <View key={creator.id} style={styles.creatorRow}>
                         <Image source={{ uri: creator.avatar }} style={styles.creatorAvatar} />
                         <Text style={styles.creatorName}>{creator.name}</Text>

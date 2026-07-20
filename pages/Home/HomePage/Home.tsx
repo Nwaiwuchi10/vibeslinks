@@ -1,3 +1,4 @@
+import { useAppSelector } from '@/store/hooks';
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +9,6 @@ import LiveCreators from './LiveCreators';
 import SocialFeed from './SocialFeed';
 import StoriesSection from './StoriesSection';
 import TrendingNearYou from './TrendingNearYou';
-import { useAppSelector } from '@/store/hooks';
 
 export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void }) {
     // Read the logged-in user directly from Redux (populated at login/signup — no separate GET endpoint exists)

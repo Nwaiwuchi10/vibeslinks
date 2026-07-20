@@ -5,18 +5,32 @@ import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
 
+import { eventService } from '@/services/eventService';
+
 const MOCK_SUGGESTED_HOSTS = [
-  { id: '1', name: 'Davido', tag: 'Afrobeats', followers: '2.3M', image: require('../../../assets/images/davido.png'), avatar: null },
-  { id: '2', name: 'Odumodublv', tag: 'EDM', followers: '1.8M', image: require('../../../assets/images/modu.png'), avatar: null },
+  { id: '1', name: 'Davido', tag: 'Afrobeats', followers: '2.3M', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&fit=crop&q=80', image: null },
+  { id: '2', name: 'Odumodublv', tag: 'EDM', followers: '1.8M', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&fit=crop&q=80', image: null },
 ];
 
 const SuggestedHosts = () => {
   const [hosts, setHosts] = useState<any[]>([]);
 
   useEffect(() => {
-    homeService.getSuggestedHosts().then((data) => {
-      if (Array.isArray(data) && data.length > 0) setHosts(data);
-    });
+    const fetchHosts = async () => {
+      try {
+        let data = await homeService.getSuggestedHosts();
+        if (!Array.isArray(data) || data.length === 0) {
+          const res = await eventService.getArtistOptions();
+          data = Array.isArray(res) ? res : res?.artists || [];
+        }
+        if (Array.isArray(data) && data.length > 0) {
+          setHosts(data);
+        }
+      } catch (err) {
+        console.log('[SuggestedHosts] Error loading hosts:', err);
+      }
+    };
+    fetchHosts();
   }, []);
 
   const displayHosts = hosts.length > 0

@@ -14,6 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
+import { authService } from '@/services/authService';
 
 const menuItems = [
   {
@@ -201,8 +202,12 @@ export default function ProfileMain() {
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.logoutButton}
-                onPress={() => {
+                onPress={async () => {
                   setLogoutModalVisible(false);
+                  try {
+                    await authService.logout();
+                    router.replace('/(auth)/login' as any);
+                  } catch {}
                 }}
               >
                 <Text style={styles.logoutButtonText}>Yes, Logout</Text>

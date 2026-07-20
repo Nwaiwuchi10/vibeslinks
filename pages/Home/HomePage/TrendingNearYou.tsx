@@ -1,53 +1,38 @@
-import React, { useEffect } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Colors } from '../../../constants/Colors';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { eventService } from '@/services/eventService';
 
-
-// Default mock event to prevent UI breaks when backend list is empty
-const MOCK_EVENT = {
-    id: 'mock-event-id',
-    title: 'Deejay Coded Showcase',
-    imageUrl: '', // Will fallback to redvive image
-    location: 'Lekki Ikola, Lagos Nigeria',
-    dateTimeText: 'May 15 - 9:00 PM',
-    priceText: '₦10,000',
-    avatars: [5, 11, 8, 9],
-};
-
 const TrendingNearYou = () => {
     const dispatch = useAppDispatch();
     const nearYouEvents = useAppSelector((state) => state.event.nearYou);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Fetch near you events on component mount
-        eventService.getEventsNearYou().catch((err) => {
-            console.log('[TrendingNearYou] Error fetching near-you events:', err);
-        });
+        eventService.getEventsNearYou()
+            .catch((err) => { console.log('[TrendingNearYou] Error fetching near-you events:', err); })
+            .finally(() => setLoading(false));
     }, []);
 
-    // If backend returns empty, show mock event to preserve UI presentation
-    const displayEvents = nearYouEvents.length > 0 
-        ? nearYouEvents.map((evt: any) => ({
-            id: evt.id,
-            title: evt.title,
-            imageUrl: evt.imageUrl || evt.eventPosterUrl,
-            location: evt.location || evt.venue || 'Lagos, Nigeria',
-            dateTimeText: evt.startDateTime ? new Date(evt.startDateTime).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-            }) : 'Upcoming',
-            priceText: evt.ticketPricingTiers?.[0] 
-                ? `₦${evt.ticketPricingTiers[0].price.toLocaleString()}` 
-                : 'Free',
-            avatars: [5, 11, 8, 9],
-        }))
-        : [MOCK_EVENT];
+    const displayEvents = nearYouEvents.map((evt: any) => ({
+        id: evt.id,
+        title: evt.title,
+        imageUrl: evt.imageUrl || evt.coverImageUrl || evt.eventPosterUrl || null,
+        location: evt.location || evt.venue || evt.locationText || 'Lagos, Nigeria',
+        dateTimeText: evt.dateTimeText || (evt.startDateTime ? new Date(evt.startDateTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        }) : 'Upcoming'),
+        priceText: evt.priceText || (evt.ticketPricingTiers?.[0]
+            ? `₦${Number(evt.ticketPricingTiers[0].price).toLocaleString()}`
+            : 'Free'),
+        attendees: evt.attendees || [],
+    }));
 
     return (
         <View style={styles.container}>
@@ -58,7 +43,22 @@ const TrendingNearYou = () => {
                 </TouchableOpacity>
             </View>
 
-            {displayEvents.map((event) => (
+            {loading && (
+                <View style={styles.skeleton}>
+                    <View style={styles.skeletonImage} />
+                    <View style={styles.skeletonLine} />
+                    <View style={[styles.skeletonLine, { width: '60%' }]} />
+                </View>
+            )}
+
+            {!loading && displayEvents.length === 0 && (
+                <View style={styles.emptyState}>
+                    <Ionicons name="location-outline" size={36} color="#CCC" />
+                    <Text style={styles.emptyText}>No events near you yet</Text>
+                </View>
+            )}
+
+            {!loading && displayEvents.map((event: any) => (
                 <TouchableOpacity
                     key={event.id}
                     style={styles.nearYouCard}
@@ -91,15 +91,17 @@ const TrendingNearYou = () => {
                         <Text style={styles.priceHighlight}>
                             {event.priceText} <Text style={styles.priceSub}>/ Person</Text>
                         </Text>
-                        <View style={styles.attendingStack}>
-                            {event.avatars.map((img, i) => (
-                                <Image 
-                                    key={i} 
-                                    source={{ uri: `https://i.pravatar.cc/150?img=${img}` }} 
-                                    style={[styles.attendingAvatar, { right: i * 15 }]} 
-                                />
-                            ))}
-                        </View>
+                        {event.attendees?.length > 0 && (
+                            <View style={styles.attendingStack}>
+                                {event.attendees.slice(0, 4).map((att: any, i: number) => (
+                                    <Image
+                                        key={i}
+                                        source={{ uri: att.avatarUrl || att.profilePictureUrl || `https://i.pravatar.cc/150?img=${i + 5}` }}
+                                        style={[styles.attendingAvatar, { right: i * 15 }]}
+                                    />
+                                ))}
+                            </View>
+                        )}
                     </View>
                 </TouchableOpacity>
             ))}
@@ -111,9 +113,7 @@ const TrendingNearYou = () => {
 export default TrendingNearYou;
 
 const styles = StyleSheet.create({
-    container: {
-        marginBottom: 30,
-    },
+    container: { marginBottom: 30 },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -123,9 +123,31 @@ const styles = StyleSheet.create({
     },
     sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
     seeAllText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
-    nearYouCard: {
-        paddingHorizontal: 20,
+    skeleton: {
+        marginHorizontal: 20,
+        borderRadius: 16,
+        overflow: 'hidden',
     },
+    skeletonImage: {
+        width: '100%',
+        height: 180,
+        backgroundColor: '#E8E8E8',
+        borderRadius: 16,
+        marginBottom: 10,
+    },
+    skeletonLine: {
+        height: 14,
+        backgroundColor: '#EEEEEE',
+        borderRadius: 8,
+        marginBottom: 8,
+        width: '80%',
+    },
+    emptyState: {
+        paddingVertical: 30,
+        alignItems: 'center',
+    },
+    emptyText: { color: '#BBB', fontSize: 14, marginTop: 8 },
+    nearYouCard: { paddingHorizontal: 20 },
     nearYouImage: {
         width: '100%',
         height: 180,
@@ -133,33 +155,13 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     nearYouTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A2E', marginBottom: 8 },
-    infoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    infoItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    nearYouInfoText: {
-        fontSize: 12,
-        color: '#6B6B80',
-        marginLeft: 4,
-    },
-    nearYouFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
+    infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    infoItem: { flexDirection: 'row', alignItems: 'center' },
+    nearYouInfoText: { fontSize: 12, color: '#6B6B80', marginLeft: 4 },
+    nearYouFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     priceHighlight: { fontSize: 16, color: Colors.primary, fontWeight: '800' },
     priceSub: { fontSize: 12, color: '#8A8A8A', fontWeight: '500' },
-    attendingStack: {
-        flexDirection: 'row',
-        position: 'relative',
-        height: 24,
-        width: 80,
-    },
+    attendingStack: { flexDirection: 'row', position: 'relative', height: 24, width: 80 },
     attendingAvatar: {
         width: 24,
         height: 24,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     Image,
@@ -11,12 +11,14 @@ import {
     View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
+import { useAppSelector } from '@/store/hooks';
 
 const { width, height } = Dimensions.get('window');
 
-const CELL_SIZE = (width - 48 - 28) / 3; // 3 cols, horizontal padding + gaps
+const CELL_SIZE = (width - 48 - 28) / 3;
 
 const INITIAL_SLOTS = [
     { id: '1', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', filled: true },
@@ -31,17 +33,44 @@ const INITIAL_SLOTS = [
 ];
 
 const REACTIONS = [
-    { emoji: '😍', label: '0' },
-    { emoji: '❤️', label: '0' },
-    { emoji: '😡', label: '0' },
-    { emoji: '😂', label: '0' },
-    { emoji: '👏', label: '0' },
+    { emoji: '😍', label: '0', type: 'love' as const },
+    { emoji: '❤️', label: '0', type: 'love' as const },
+    { emoji: '😡', label: '0', type: 'like' as const },
+    { emoji: '😂', label: '0', type: 'like' as const },
+    { emoji: '👏', label: '0', type: 'clap' as const },
 ];
 
 export default function LiveDashboardScreen() {
+    const { id: streamId } = useLocalSearchParams<{ id?: string }>();
+    const authUser = useAppSelector((state) => state.auth.user);
     const [showEndModal, setShowEndModal] = useState(false);
     const [showGuestRequest, setShowGuestRequest] = useState(true);
     const [message, setMessage] = useState('');
+    const [streamDetails, setStreamDetails] = useState<any>(null);
+    const [viewerCount, setViewerCount] = useState(0);
+    const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
+
+    useEffect(() => {
+        if (!streamId) return;
+        liveStreamService.getStreamDetails(streamId)
+            .then((data: any) => {
+                setStreamDetails(data);
+                setViewerCount(data?.viewerCount || 0);
+            })
+            .catch(() => {});
+    }, [streamId]);
+
+    const handleReact = async (type: 'love' | 'clap' | 'like' | 'fire') => {
+        if (!streamId) return;
+        try {
+            await liveStreamService.reactToStream(streamId, type);
+            setReactionCounts(prev => ({ ...prev, [type]: (prev[type] || 0) + 1 }));
+        } catch {}
+    };
+
+    const creatorName = streamDetails?.creator?.name || streamDetails?.creatorName || authUser?.fullName || 'You';
+    const creatorAvatar = streamDetails?.creator?.profilePictureUrl || authUser?.profilePictureUrl || 'https://i.pravatar.cc/150?img=20';
+
 
     return (
         <View style={styles.container}>
@@ -51,12 +80,12 @@ export default function LiveDashboardScreen() {
                     {/* Creator pill */}
                     <View style={styles.creatorPill}>
                         <Image
-                            source={{ uri: 'https://i.pravatar.cc/150?img=20' }}
+                            source={{ uri: creatorAvatar }}
                             style={styles.creatorAvatar}
                         />
-                        <Text style={styles.creatorName}>Olivia</Text>
+                        <Text style={styles.creatorName}>{creatorName}</Text>
                         <Ionicons name="heart" size={14} color="#FFF" style={{ marginLeft: 6 }} />
-                        <Text style={styles.heartCount}> 0</Text>
+                        <Text style={styles.heartCount}> {reactionCounts['love'] || 0}</Text>
                     </View>
 
                     {/* Power / End button */}
@@ -106,13 +135,13 @@ export default function LiveDashboardScreen() {
                     <View style={styles.statsRow}>
                         <View style={styles.watchingPill}>
                             <MaterialCommunityIcons name="account-group-outline" size={14} color="#FFF" />
-                            <Text style={styles.watchingText}> 0 Watching</Text>
+                            <Text style={styles.watchingText}> {viewerCount} Watching</Text>
                         </View>
                         {REACTIONS.map((r, i) => (
-                            <View key={i} style={styles.reactionItem}>
+                            <TouchableOpacity key={i} style={styles.reactionItem} onPress={() => handleReact(r.type)}>
                                 <Text style={styles.reactionEmoji}>{r.emoji}</Text>
-                                <Text style={styles.reactionCount}>{r.label}</Text>
-                            </View>
+                                <Text style={styles.reactionCount}>{reactionCounts[r.type] || 0}</Text>
+                            </TouchableOpacity>
                         ))}
                     </View>
 
@@ -139,7 +168,7 @@ export default function LiveDashboardScreen() {
                         <View style={styles.endLiveButtonsRow}>
                             <TouchableOpacity
                                 style={styles.endLiveBtn}
-                                onPress={() => router.replace('/live-summary')}
+                                onPress={() => router.replace({ pathname: '/live-summary', params: streamId ? { id: streamId } : undefined } as any)}
                             >
                                 <Text style={styles.endLiveBtnText}>End Live</Text>
                             </TouchableOpacity>

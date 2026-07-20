@@ -47,6 +47,12 @@ const CreateEventStep2 = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [customCoverUrl, setCustomCoverUrl] = useState(eventData.imageUrl);
 
+  // Custom typing inputs
+  const [customCategoryText, setCustomCategoryText] = useState('');
+  const [showCustomArtistForm, setShowCustomArtistForm] = useState(false);
+  const [customArtistName, setCustomArtistName] = useState('');
+  const [customArtistAvatar, setCustomArtistAvatar] = useState('');
+
   const handleSelectImage = async () => {
     setShowImageSourcePicker(false);
     try {
@@ -193,6 +199,22 @@ const CreateEventStep2 = ({
           </Text>
           <Ionicons name="chevron-down" size={18} color="#999" />
         </TouchableOpacity>
+
+        {eventData.category === 'other' && (
+          <View style={{ marginBottom: 15 }}>
+            <Text style={styles.label}>Type Custom Category</Text>
+            <TextInput
+              placeholder="Enter event category name..."
+              style={styles.input}
+              placeholderTextColor="#999"
+              value={customCategoryText}
+              onChangeText={(text) => {
+                setCustomCategoryText(text);
+                updateEventData({ category: text });
+              }}
+            />
+          </View>
+        )}
 
         {/* Featured Artists section */}
         <View style={styles.artistSection}>
@@ -379,45 +401,101 @@ const CreateEventStep2 = ({
       {/* Artist Selection Modal */}
       <Modal visible={showArtistSelector} transparent animationType="slide" onRequestClose={() => setShowArtistSelector(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { height: '80%', maxHeight: '80%' }]}>
+          <View style={[styles.modalSheet, { height: '85%', maxHeight: '85%' }]}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Select Featured Artists</Text>
-            
-            <View style={styles.searchBarWrapper}>
-              <Ionicons name="search-outline" size={18} color="#999" style={{ marginRight: 8 }} />
-              <TextInput
-                placeholder="Search artists..."
-                style={styles.searchInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginTop: 10 }}>
+              <Text style={styles.modalTitle}>Select Featured Artists</Text>
+              <TouchableOpacity onPress={() => setShowCustomArtistForm(!showCustomArtistForm)}>
+                <Text style={{ color: '#8E2DE2', fontWeight: '700', fontSize: 13 }}>
+                  {showCustomArtistForm ? 'Back to List' : '+ Add Custom'}
+                </Text>
+              </TouchableOpacity>
             </View>
+            
+            {showCustomArtistForm ? (
+              <ScrollView contentContainerStyle={{ padding: 20 }}>
+                <Text style={styles.label}>Artist Name</Text>
+                <TextInput
+                  placeholder="e.g. Wizkid"
+                  style={styles.input}
+                  placeholderTextColor="#999"
+                  value={customArtistName}
+                  onChangeText={setCustomArtistName}
+                />
+                
+                <Text style={styles.label}>Artist Picture URL</Text>
+                <TextInput
+                  placeholder="https://example.com/artist.png"
+                  style={styles.input}
+                  placeholderTextColor="#999"
+                  value={customArtistAvatar}
+                  onChangeText={setCustomArtistAvatar}
+                />
 
-            <FlatList
-              data={filteredArtists}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingHorizontal: 20 }}
-              renderItem={({ item }) => {
-                const isSelected = (eventData.artisteIds || []).includes(item.id);
-                return (
-                  <TouchableOpacity
-                    style={[styles.artistSelectItem, isSelected && styles.artistSelectItemActive]}
-                    onPress={() => handleToggleArtist(item.id)}
-                  >
-                    <Image source={{ uri: item.avatarUrl }} style={styles.artistSelectAvatar} />
-                    <Text style={styles.artistSelectName}>{item.name}</Text>
-                    <Ionicons 
-                      name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
-                      size={24} 
-                      color={isSelected ? "#8E2DE2" : "#DDD"} 
-                    />
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={styles.emptyArtistsText}>No artists found. Make sure they are registered on the platform.</Text>
-              }
-            />
+                <TouchableOpacity 
+                  style={[styles.addBtn, { paddingVertical: 14, alignItems: 'center', marginTop: 10 }]}
+                  onPress={() => {
+                    if (!customArtistName.trim()) {
+                      store.dispatch(showToast({ type: 'warning', message: 'Artist name is required' }));
+                      return;
+                    }
+                    const newArtistId = `custom_${Date.now()}`;
+                    const newArtist: ArtistOption = {
+                      id: newArtistId,
+                      name: customArtistName.trim(),
+                      avatarUrl: customArtistAvatar.trim() || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 50)}`,
+                    };
+                    setAvailableArtists(prev => [newArtist, ...prev]);
+                    handleToggleArtist(newArtistId);
+                    
+                    // Reset custom inputs
+                    setCustomArtistName('');
+                    setCustomArtistAvatar('');
+                    setShowCustomArtistForm(false);
+                  }}
+                >
+                  <Text style={[styles.addBtnText, { fontSize: 14 }]}>Add Artist to Event</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            ) : (
+              <>
+                <View style={styles.searchBarWrapper}>
+                  <Ionicons name="search-outline" size={18} color="#999" style={{ marginRight: 8 }} />
+                  <TextInput
+                    placeholder="Search artists..."
+                    style={styles.searchInput}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                </View>
+
+                <FlatList
+                  data={filteredArtists}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={{ paddingHorizontal: 20 }}
+                  renderItem={({ item }) => {
+                    const isSelected = (eventData.artisteIds || []).includes(item.id);
+                    return (
+                      <TouchableOpacity
+                        style={[styles.artistSelectItem, isSelected && styles.artistSelectItemActive]}
+                        onPress={() => handleToggleArtist(item.id)}
+                      >
+                        <Image source={{ uri: item.avatarUrl }} style={styles.artistSelectAvatar} />
+                        <Text style={styles.artistSelectName}>{item.name}</Text>
+                        <Ionicons 
+                          name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                          size={24} 
+                          color={isSelected ? "#8E2DE2" : "#DDD"} 
+                        />
+                      </TouchableOpacity>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyArtistsText}>No artists found. Add a custom artist above.</Text>
+                  }
+                />
+              </>
+            )}
 
             <TouchableOpacity 
               style={styles.closeModalBtn}
