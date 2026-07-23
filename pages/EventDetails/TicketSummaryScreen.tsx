@@ -18,6 +18,7 @@ import { RootState } from '@/store';
 import { setLastPurchase } from '@/store/slices/eventSlice';
 import { stripeService } from '@/services/stripeService';
 import { eventService } from '@/services/eventService';
+import StripeWebViewModal from '@/components/StripeWebViewModal';
 
 export default function TicketSummaryScreen() {
     const { id, paymentMethod: pmParam, paymentMethodId: pmIdParam } = useLocalSearchParams<{ id?: string; paymentMethod?: string; paymentMethodId?: string }>();
@@ -26,6 +27,12 @@ export default function TicketSummaryScreen() {
     const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>(pmParam === 'wallet' ? 'wallet' : 'stripe');
     const [paymentMethodId, setPaymentMethodId] = useState<string | undefined>(pmIdParam || undefined);
     const [isPaying, setIsPaying] = useState(false);
+
+    // Stripe WebView state
+    const [stripeModalVisible, setStripeModalVisible] = useState(false);
+    const [stripePublishableKey, setStripePublishableKey] = useState('');
+    const [stripeClientSecret, setStripeClientSecret] = useState('');
+    const [stripePaymentIntentId, setStripePaymentIntentId] = useState('');
 
     const bookingInfo = useSelector((state: RootState) => state.event.bookingInfo);
     const event = useSelector((state: RootState) => state.event.currentEvent);
@@ -77,26 +84,45 @@ export default function TicketSummaryScreen() {
         setIsPaying(true);
         try {
             const eventId = id || event.id;
-            // Use first selected tier for intent (backend maps multi-tier internally)
-            const firstTierId = selectedTierIds[0];
-            const firstQty = bookingInfo.selectedTiers[firstTierId] || 1;
 
             if (paymentMethod === 'stripe') {
                 // Step 1: Create Stripe PaymentIntent
-                await stripeService.createTicketIntent(eventId, {
-                    ticketTierId: firstTierId,
-                    quantity: firstQty,
-                    buyer: bookingInfo.buyer,
+                const intentRes = await eventService.createStripeTicketIntent(eventId, {
+                    items: selectedTierIds.map(tierId => ({
+                        tierId,
+                        quantity: bookingInfo.selectedTiers[tierId],
+                    })),
+                    fullName: bookingInfo.buyer.fullName,
+                    email: bookingInfo.buyer.email,
+                    phoneNumber: bookingInfo.buyer.phoneNumber,
+                    country: bookingInfo.buyer.country || 'Nigeria',
+                    gender: bookingInfo.buyer.gender || 'Male',
                 });
-                // Step 2: Purchase (backend confirms on its side)
-                const res = await stripeService.purchaseTickets(eventId, {
-                    ticketTierId: firstTierId,
-                    quantity: firstQty,
-                    buyer: bookingInfo.buyer,
-                    paymentMethod: 'stripe',
-                    paymentMethodId: paymentMethodId,
-                });
-                dispatch(setLastPurchase(res));
+
+                const pubKey = intentRes?.payment?.publishableKey || intentRes?.publishableKey;
+                const secret = intentRes?.payment?.clientSecret || intentRes?.clientSecret;
+                const pIntentId = intentRes?.payment?.paymentIntentId || intentRes?.paymentIntentId;
+
+                if (pubKey && secret) {
+                    setStripePublishableKey(pubKey);
+                    setStripeClientSecret(secret);
+                    setStripePaymentIntentId(pIntentId || '');
+                    setShowPayment(false);
+                    setStripeModalVisible(true);
+                } else {
+                    // Fallback direct purchase if backend already confirmed
+                    const res = await eventService.purchaseTickets(eventId, {
+                        items: selectedTierIds.map(tierId => ({
+                            tierId,
+                            quantity: bookingInfo.selectedTiers[tierId],
+                        })),
+                        paymentMethod: 'stripe',
+                        paymentIntentId: pIntentId,
+                    });
+                    dispatch(setLastPurchase(res));
+                    setShowPayment(false);
+                    router.push('/booking-success');
+                }
             } else {
                 // Wallet payment
                 const res = await eventService.purchaseTickets(eventId, {
@@ -107,12 +133,33 @@ export default function TicketSummaryScreen() {
                     paymentMethod: 'wallet',
                 });
                 dispatch(setLastPurchase(res));
+                setShowPayment(false);
+                router.push('/booking-success');
             }
-
-            setShowPayment(false);
-            router.push('/booking-success');
         } catch (err) {
             console.warn('[TicketSummaryScreen] Purchase failed:', err);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    const handleStripeSuccess = async (confirmedIntentId: string) => {
+        setStripeModalVisible(false);
+        setIsPaying(true);
+        try {
+            const eventId = id || event.id;
+            const res = await eventService.purchaseTickets(eventId, {
+                items: selectedTierIds.map(tierId => ({
+                    tierId,
+                    quantity: bookingInfo.selectedTiers[tierId],
+                })),
+                paymentMethod: 'stripe',
+                paymentIntentId: confirmedIntentId || stripePaymentIntentId,
+            });
+            dispatch(setLastPurchase(res));
+            router.push('/booking-success');
+        } catch (err) {
+            console.warn('[TicketSummaryScreen] Purchase finalization failed:', err);
         } finally {
             setIsPaying(false);
         }
@@ -291,6 +338,17 @@ export default function TicketSummaryScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Stripe Direct Embedded WebView Modal */}
+            <StripeWebViewModal
+                visible={stripeModalVisible}
+                publishableKey={stripePublishableKey}
+                clientSecret={stripeClientSecret}
+                amountText={`₦${total.toLocaleString()}`}
+                onClose={() => setStripeModalVisible(false)}
+                onSuccess={handleStripeSuccess}
+                onError={(err) => console.warn('[StripeWebView] Error:', err)}
+            />
         </SafeAreaView>
     );
 }

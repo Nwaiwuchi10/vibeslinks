@@ -6,16 +6,17 @@ import { Colors } from '../../../constants/Colors';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { eventService } from '@/services/eventService';
 
-const TrendingNearYou = () => {
+const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
     const dispatch = useAppDispatch();
     const nearYouEvents = useAppSelector((state) => state.event.nearYou);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        setLoading(true);
         eventService.getEventsNearYou()
             .catch((err) => { console.log('[TrendingNearYou] Error fetching near-you events:', err); })
             .finally(() => setLoading(false));
-    }, []);
+    }, [refreshKey]);
 
     const displayEvents = nearYouEvents.map((evt: any) => ({
         id: evt.id,

@@ -6,16 +6,17 @@ import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
 
 
-const LiveCreators = () => {
+const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
   const [creators, setCreators] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     homeService.getCreatorsOnLive()
       .then(setCreators)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const displayCreators = creators.map((c: any) => ({
     id: c.id || c.streamId || String(Math.random()),

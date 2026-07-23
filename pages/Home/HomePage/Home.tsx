@@ -9,11 +9,12 @@ import LiveCreators from './LiveCreators';
 import SocialFeed from './SocialFeed';
 import StoriesSection from './StoriesSection';
 import TrendingNearYou from './TrendingNearYou';
+import { resolveImageUrl } from '@/services/apiClient';
 
-export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void }) {
+export default function HomeScreen({ onOpenStream, refreshKey }: { onOpenStream: () => void; refreshKey?: number }) {
     // Read the logged-in user directly from Redux (populated at login/signup — no separate GET endpoint exists)
     const authUser = useAppSelector((state) => state.auth.user);
-    const userAvatar = authUser?.profilePictureUrl || authUser?.avatarUrl || null;
+    const userAvatar = resolveImageUrl(authUser?.profilePictureUrl || authUser?.avatarUrl || null);
     const userName = authUser?.fullName || authUser?.name || authUser?.username || null;
 
     return (
@@ -28,11 +29,11 @@ export default function HomeScreen({ onOpenStream }: { onOpenStream: () => void 
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                <StoriesSection />
-                <AdsBanner />
-                <TrendingNearYou />
-                <LiveCreators />
-                <SocialFeed />
+                <StoriesSection refreshKey={refreshKey} />
+                <AdsBanner refreshKey={refreshKey} />
+                <TrendingNearYou refreshKey={refreshKey} />
+                <LiveCreators refreshKey={refreshKey} />
+                <SocialFeed refreshKey={refreshKey} />
 
                 <View style={{ height: 40 }} />
             </ScrollView>

@@ -4,8 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
-
 import { eventService } from '@/services/eventService';
+import { resolveImageUrl } from '@/services/apiClient';
 
 const MOCK_SUGGESTED_HOSTS = [
   { id: '1', name: 'Davido', tag: 'Afrobeats', followers: '2.3M', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&fit=crop&q=80', image: null },
@@ -45,7 +45,7 @@ const SuggestedHosts = () => {
             ? `${(h.followerCount / 1_000).toFixed(1)}K`
             : String(h.followerCount)
           : '',
-        avatar: h.profilePictureUrl || h.avatarUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
+        avatar: resolveImageUrl(h.profilePictureUrl || h.avatarUrl || null) || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
         image: null,
       }))
     : MOCK_SUGGESTED_HOSTS;

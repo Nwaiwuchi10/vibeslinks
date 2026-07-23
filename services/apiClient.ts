@@ -129,3 +129,16 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export const resolveImageUrl = (url?: string | null) => {
+  if (!url) return null;
+  if (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('file://') ||
+    url.startsWith('data:')
+  ) {
+    return url;
+  }
+  return url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/${url}`;
+};

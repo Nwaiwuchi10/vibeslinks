@@ -32,14 +32,30 @@ const EventDetails = () => {
 
     const event = useSelector((state: RootState) => state.event.currentEvent);
     const commentsList = useSelector((state: RootState) => state.event.comments);
+    const authUser = useSelector((state: RootState) => state.auth.user);
+
+    const [friendsAttending, setFriendsAttending] = useState<any[]>([]);
+    const [userReaction, setUserReaction] = useState<string | null>(null);
 
     useEffect(() => {
         if (!id) return;
         async function fetchDetails() {
             try {
                 setLoading(true);
-                await eventService.getEventDetailsScreen(id!);
+                const res = await eventService.getEventDetailsScreen(id!);
+                
+                // Set initial reaction if returned in details
+                const detailEvent = res?.event || res;
+                if (detailEvent?.userReaction) {
+                    setUserReaction(detailEvent.userReaction);
+                }
+
                 await eventService.getEventComments(id!);
+
+                try {
+                    const friends = await eventService.getEventFriendsAttending(id!);
+                    setFriendsAttending(friends || []);
+                } catch {}
             } catch (err) {
                 console.warn('[EventDetails] Fetch failed:', err);
             } finally {
@@ -48,6 +64,21 @@ const EventDetails = () => {
         }
         fetchDetails();
     }, [id]);
+
+    const handleReactionPress = async (type = 'love') => {
+        if (!id) return;
+        try {
+            if (userReaction === type) {
+                await eventService.deleteEventReaction(id);
+                setUserReaction(null);
+            } else {
+                await eventService.postEventReaction(id, type);
+                setUserReaction(type);
+            }
+        } catch (err) {
+            console.warn('[EventDetails] Reaction failed:', err);
+        }
+    };
 
     const handleAddComment = async () => {
         if (!id || !commentText.trim() || submittingComment) return;
@@ -89,10 +120,14 @@ const EventDetails = () => {
     const attendeeCount = event.summary?.attendeeCountLabel || '0+';
     const attendeeList = event.summary?.attendees || [];
     const description = event.about?.description || event.description || 'No description provided.';
-    const host = event.organizer?.host || { name: 'Organizer', username: 'host', avatarUrl: null };
+    const host = event.organizer?.host || event.organizer || event.host || event.creator || event.user || { name: 'Organizer', username: 'host', avatarUrl: null };
     const artists = event.featuredArtists?.artists || [];
     const tickets = event.ticketCards?.tickets || [];
     const countdown = event.countdown || { days: '00', hours: '00', minutes: '00', seconds: '00' };
+
+    const isHost = authUser?.id && (host.id || host._id)
+      ? (authUser.id === host.id || authUser.id === host._id)
+      : (authUser?.username && host.username ? authUser.username === host.username : false);
 
     return (
         <View style={styles.container}>
@@ -111,11 +146,31 @@ const EventDetails = () => {
                                 <Ionicons name="arrow-back" size={20} color="#FFF" />
                             </TouchableOpacity>
                             <View style={{ flexDirection: 'row' }}>
+                                {isHost && (
+                                    <TouchableOpacity 
+                                        style={[styles.iconCircle, { marginRight: 10 }]}
+                                        onPress={async () => {
+                                            try {
+                                                if (id) {
+                                                    await eventService.duplicateEvent(id);
+                                                }
+                                            } catch (e) {
+                                                console.error('Failed to duplicate:', e);
+                                            }
+                                        }}
+                                    >
+                                        <Ionicons name="copy-outline" size={20} color="#FFF" />
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity 
                                     style={[styles.iconCircle, { marginRight: 10 }]}
-                                    onPress={() => id && eventService.saveEventToFavorite(id)}
+                                    onPress={() => handleReactionPress('love')}
                                 >
-                                    <Ionicons name="heart-outline" size={20} color="#FFF" />
+                                    <Ionicons 
+                                        name={userReaction ? "heart" : "heart-outline"} 
+                                        size={20} 
+                                        color={userReaction ? "#FF4B4B" : "#FFF"} 
+                                    />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.iconCircle}>
                                     <Ionicons name="share-social-outline" size={20} color="#FFF" />
@@ -158,6 +213,16 @@ const EventDetails = () => {
                             <Text style={styles.plusText}>{attendeeCount}</Text>
                         </View>
                     </View>
+
+                    {friendsAttending.length > 0 && (
+                        <View style={styles.friendsRow}>
+                            <Ionicons name="people-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
+                            <Text style={styles.friendsText} numberOfLines={1}>
+                                {friendsAttending.slice(0, 2).map((f: any) => f.fullName || f.username || 'Friend').join(', ')}
+                                {friendsAttending.length > 2 ? ` and ${friendsAttending.length - 2} other friends` : ''} attending
+                            </Text>
+                        </View>
+                    )}
 
                     {/* About Event */}
                     <View style={styles.section}>
@@ -427,6 +492,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
         marginBottom: 24,
+    },
+    friendsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        marginBottom: 24,
+    },
+    friendsText: {
+        fontSize: 13,
+        color: '#6B6B80',
+        fontWeight: '500',
     },
     avatarStack: {
         flexDirection: 'row',

@@ -105,9 +105,9 @@ export default function PaymentMethodScreen() {
                     {/* Saved Cards */}
                     <View style={styles.section}>
                         <Text style={styles.sectionLabel}>Credit & Debit Card</Text>
-                        {savedCards.map((card: any) => (
+                        {savedCards.map((card: any, index: number) => (
                             <TouchableOpacity
-                                key={card.id}
+                                key={card.id || index}
                                 style={[styles.cardRow, selectedCardId === card.id && styles.cardRowSelected]}
                                 onPress={() => { setSelectedCardId(card.id); setWalletSelected(false); }}
                                 activeOpacity={0.8}

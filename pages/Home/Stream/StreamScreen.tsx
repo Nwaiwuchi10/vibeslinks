@@ -20,7 +20,8 @@ const { width } = Dimensions.get('window');
 
 const QUICK_ACTIONS = [
   { id: '1', name: 'Go Live', icon: 'video', color: '#8E2DE2' },
-  { id: '5', name: 'Create Post', icon: 'pencil-box-multiple', color: '#8A2BE2' },
+  { id: '5', name: 'Create Post', icon: 'pencil-box-multiple', color: '#7B2FFF' },
+  { id: '6', name: 'Add Story', icon: 'circle-slice-8', color: '#FF6B35' },
   { id: '2', name: 'Create Event', icon: 'file-document', color: '#0082FF' },
   { id: '3', name: 'Radio FM', icon: 'microphone-variant', color: '#6BB100' },
   { id: '4', name: 'Watch Stream', icon: 'television-play', color: '#FF006B' },
@@ -92,7 +93,8 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
                     else if (action.id === '2') onCreateEventPress();
                     else if (action.id === '3') router.push('/radio');
                     else if (action.id === '4') router.push('/watch-stream');
-                    else if (action.id === '5') router.push('/add-story');
+                    else if (action.id === '5') router.push('/create-post');
+                    else if (action.id === '6') router.push('/add-story');
                   }}
                 >
                   <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />

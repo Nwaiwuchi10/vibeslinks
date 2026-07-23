@@ -3,57 +3,64 @@ import { ImageBackground, StyleSheet, Text, View, TouchableOpacity } from 'react
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
+import { resolveImageUrl } from '@/services/apiClient';
 
-const MOCK_ADVERT = {
-  title: 'Worship Da King',
-  description: 'Nightlife spotlight',
-  image: null, // will use local fallback
-  price: '₦5,000',
-  category: 'NIGHTLIFE',
-};
-
-const AdsBanner = () => {
+const AdsBanner = ({ refreshKey }: { refreshKey?: number }) => {
   const [advert, setAdvert] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    homeService.getAdverts().then((items) => {
-      if (items.length > 0) setAdvert(items[0]);
-    });
-  }, []);
+    homeService.getAdverts()
+      .then((items) => {
+        if (items && items.length > 0) {
+          setAdvert(items[0]);
+        } else {
+          setAdvert(null);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [refreshKey]);
 
-  const display = advert
-    ? {
-        title: advert.title || MOCK_ADVERT.title,
-        category: advert.category || MOCK_ADVERT.category,
-        price: advert.price ? `₦${Number(advert.price).toLocaleString()}` : MOCK_ADVERT.price,
-        image: advert.image || advert.imageUrl || null,
-      }
-    : MOCK_ADVERT;
+  if (loading || !advert) {
+    return null;
+  }
+
+  const title = advert.title || 'Spotlight';
+  const category = advert.category || 'PROMOTION';
+  const price = advert.price ? `₦${Number(advert.price).toLocaleString()}` : '';
+  const image = resolveImageUrl(advert.image || advert.imageUrl || advert.coverUrl || null);
 
   return (
     <TouchableOpacity
       style={styles.adBannerContainer}
       activeOpacity={0.9}
-      onPress={() => advert?.id && router.push({ pathname: '/event-details', params: { id: advert.id } })}
+      onPress={() => {
+        const targetId = advert.eventId || advert.id;
+        if (targetId) {
+          router.push({ pathname: '/event-details', params: { id: targetId } });
+        }
+      }}
     >
       <ImageBackground
-        source={display.image ? { uri: display.image } : require('../../../assets/images/djv.png')}
+        source={image ? { uri: image } : require('../../../assets/images/djv.png')}
         style={styles.adBannerImage}
         imageStyle={{ borderRadius: 16 }}
       >
         <View style={styles.adDarkOverlay}>
           <View style={styles.adTopRow}>
             <View style={styles.badgeWhite}>
-              <Text style={styles.badgeWhiteText}>{(display.category || 'NIGHTLIFE').toUpperCase()}</Text>
+              <Text style={styles.badgeWhiteText}>{category.toUpperCase()}</Text>
             </View>
             <View style={styles.badgeDark}><Text style={styles.badgeDarkText}>Ad</Text></View>
           </View>
           <View style={styles.adBottomRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={styles.adTitle}>{display.title}</Text>
+              <Text style={styles.adTitle}>{title}</Text>
               <MaterialIcons name="verified" size={14} color="#FFF" style={{ marginLeft: 4 }} />
             </View>
-            <Text style={styles.adPrice}>{display.price}</Text>
+            {price ? <Text style={styles.adPrice}>{price}</Text> : null}
           </View>
         </View>
       </ImageBackground>

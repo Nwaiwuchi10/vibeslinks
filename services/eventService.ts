@@ -52,8 +52,8 @@ export const eventService = {
   },
 
   async getEventsNearYou(radiusKm?: string) {
-    const response = await apiClient.get(`/events/near-you${radiusKm ? `?radiusKm=${radiusKm}` : ''}`);
-    const items = response.data?.items || response.data || [];
+    const response = await apiClient.get('/events');
+    const items = Array.isArray(response.data) ? response.data : response.data?.items || [];
     store.dispatch(setNearYou(items));
     return items;
   },
@@ -128,10 +128,15 @@ export const eventService = {
   },
 
   async getEventComments(id: string) {
-    const response = await apiClient.get(`/events/${id}/comments`);
-    const comments = Array.isArray(response.data) ? response.data : response.data?.items || [];
-    store.dispatch(setComments(comments));
-    return comments;
+    try {
+      const response = await apiClient.get(`/events/${id}/comments`, { silent: true });
+      const comments = Array.isArray(response.data) ? response.data : response.data?.items || [];
+      store.dispatch(setComments(comments));
+      return comments;
+    } catch {
+      // Comments may be restricted to attendees only — silently ignore
+      return [];
+    }
   },
 
   async createEventComment(id: string, message: string) {
@@ -196,5 +201,27 @@ export const eventService = {
 
   async getEventAnalytics(id: string) {
     return (await apiClient.get(`/events/${id}/analytics`)).data;
+  },
+
+  async getEventAttendees(id: string) {
+    return (await apiClient.get(`/events/${id}/attendees`)).data;
+  },
+
+  async getEventFriendsAttending(id: string) {
+    return (await apiClient.get(`/events/${id}/friends-attending`)).data;
+  },
+
+  async postEventReaction(id: string, type: string) {
+    return (await apiClient.post(`/events/${id}/reactions/${type}`)).data;
+  },
+
+  async deleteEventReaction(id: string) {
+    return (await apiClient.delete(`/events/${id}/reactions`)).data;
+  },
+
+  async duplicateEvent(id: string) {
+    const response = await apiClient.post(`/events/${id}/duplicate`);
+    store.dispatch(showToast({ type: 'success', message: 'Event duplicated successfully!' }));
+    return response.data;
   },
 };

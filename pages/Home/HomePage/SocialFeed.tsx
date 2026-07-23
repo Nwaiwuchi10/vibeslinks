@@ -1,59 +1,64 @@
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
-import SuggestedHosts from './SuggestedHosts';
-import VibingEventPost from './VibingEventPost';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Colors } from '@/constants/Colors';
+import { postService } from '@/services/postService';
 import PhotoSocialPost from './PhotoSocialPost';
-import VideoSocialPost from './VideoSocialPost';
-import { homeService } from '@/services/homeService';
+import SuggestedHosts from './SuggestedHosts';
 
-const SocialFeed = () => {
-    const [recommendedEvents, setRecommendedEvents] = useState<any[]>([]);
+const SocialFeed = ({ refreshKey }: { refreshKey?: number }) => {
+    const [posts, setPosts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        homeService.getRecommendedEvents()
-            .then((cards: any[]) => {
-                setRecommendedEvents(cards);
-            })
-            .catch(() => {})
-            .finally(() => setLoading(false));
+    const loadPosts = useCallback(async () => {
+        try {
+            const data = await postService.getPostFeed();
+            setPosts(data);
+        } catch (err) {
+            console.error('[SocialFeed] Failed to load posts:', err);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     }, []);
 
+    useEffect(() => {
+        loadPosts();
+    }, [loadPosts, refreshKey]);
+
+    const handleRefresh = () => {
+        setRefreshing(true);
+        loadPosts();
+    };
+
     if (loading) {
-        return <ActivityIndicator size="small" color="#8E2DE2" style={{ marginVertical: 30 }} />;
+        return (
+            <ActivityIndicator
+                size="small"
+                color={Colors.primary}
+                style={{ marginVertical: 30 }}
+            />
+        );
     }
 
-    const firstEvent = recommendedEvents.length > 0 ? recommendedEvents[0] : null;
-    const remainingEvents = recommendedEvents.slice(1);
+    if (posts.length === 0) {
+        return (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <MaterialCommunityIcons name="image-off-outline" size={48} color="#DDD" />
+                <Text style={{ color: '#999', marginTop: 12, fontSize: 14 }}>
+                    No posts yet. Be the first to post!
+                </Text>
+            </View>
+        );
+    }
 
     return (
         <View>
-            {/* "See where your friends are vibing" — powered by first recommended event */}
-            <VibingEventPost event={firstEvent} />
-
-            {/* Dynamic Social posts mapping from remaining recommended events */}
-            {remainingEvents.map((evt, idx) => {
-                const cover = evt.imageUrl || evt.eventPosterUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000';
-                return (
-                    <PhotoSocialPost 
-                        key={evt.id || idx} 
-                        imageSource={{ uri: cover }} 
-                    />
-                );
-            })}
-
-            {remainingEvents.length === 0 && (
-                <>
-                    <PhotoSocialPost imageSource={require('../../../assets/images/event.png')} />
-                    <VideoSocialPost />
-                </>
-            )}
-
+            {posts.map((post: any, idx: number) => (
+                <PhotoSocialPost key={post.id || idx} post={post} />
+            ))}
             <SuggestedHosts />
-            
-            {remainingEvents.length === 0 && (
-                <PhotoSocialPost imageSource={require('../../../assets/images/ye.png')} />
-            )}
         </View>
     );
 };

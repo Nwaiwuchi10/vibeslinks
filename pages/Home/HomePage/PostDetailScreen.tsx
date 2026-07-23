@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
     KeyboardAvoidingView,
     Platform,
@@ -10,19 +11,65 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import {
+    Feather,
+    Ionicons,
+    MaterialCommunityIcons,
+    MaterialIcons,
+} from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
+import { postService } from '@/services/postService';
 
-const COMMENTS = [
-    { id: '1', name: 'commys_dairy', avatar: 'https://i.pravatar.cc/150?img=12', time: '.1h', text: 'Good night y\'all' },
-    { id: '2', name: 'claudiocardoso', avatar: 'https://i.pravatar.cc/150?img=5', time: '.1h', text: 'Good night 000' },
-];
+function timeAgo(dateStr?: string): string {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+}
 
 export default function PostDetailScreen() {
+    const params = useLocalSearchParams<{ id?: string }>();
+    const postId = params.id;
+
+    const [post, setPost] = useState<any>(null);
+    const [loading, setLoading] = useState(!!postId);
+    const [replyText, setReplyText] = useState('');
+
+    useEffect(() => {
+        if (!postId) {
+            setLoading(false);
+            return;
+        }
+        postService.getPostById(postId).then((data) => {
+            setPost(data);
+            setLoading(false);
+        });
+    }, [postId]);
+
+    const author = post?.author || post?.user;
+    const avatarUri =
+        author?.profilePictureUrl ||
+        author?.avatarUrl ||
+        `https://i.pravatar.cc/150?img=11`;
+    const displayName = author?.name || author?.username || 'VibezLink User';
+    const username = author?.username || author?.name || 'vibezlink';
+    const caption = post?.content || post?.caption || 'Check this out!';
+    const mediaUri = post?.mediaUrls?.[0] || post?.mediaUrl || post?.imageUrl || null;
+    const timestamp = timeAgo(post?.createdAt);
+    const likes = post?.likesCount ?? 0;
+    const comments = post?.commentsCount ?? 0;
+    const shares = post?.sharesCount ?? 0;
+    const postComments: any[] = post?.comments || [];
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
+            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={20} color="#000" />
@@ -30,7 +77,11 @@ export default function PostDetailScreen() {
                 <Text style={styles.headerTitle}>VIBEZLINK</Text>
                 <View style={styles.headerRight}>
                     <TouchableOpacity style={styles.iconBtn}>
-                        <MaterialCommunityIcons name="file-document-outline" size={22} color="#000" />
+                        <MaterialCommunityIcons
+                            name="file-document-outline"
+                            size={22}
+                            color="#000"
+                        />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.iconBtn}>
                         <Ionicons name="notifications-outline" size={22} color="#000" />
@@ -38,112 +89,161 @@ export default function PostDetailScreen() {
                 </View>
             </View>
 
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                    {/* Post Content */}
-                    <View style={styles.postCard}>
-                        <View style={styles.postHeader}>
-                            <Image source={{ uri: 'https://i.pravatar.cc/150?img=11' }} style={styles.postAvatar} />
-                            <View style={styles.postAuthorInfo}>
-                                <Text style={styles.postName}>
-                                    am_official_percy <MaterialIcons name="verified" size={14} color={Colors.primary} />
-                                    <Text style={styles.postTime}> .2h</Text>
+            {loading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={Colors.primary} />
+                </View>
+            ) : (
+                <KeyboardAvoidingView
+                    style={{ flex: 1 }}
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                >
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.scrollContent}
+                    >
+                        {/* Post Content */}
+                        <View style={styles.postCard}>
+                            <View style={styles.postHeader}>
+                                <Image source={{ uri: avatarUri }} style={styles.postAvatar} />
+                                <View style={styles.postAuthorInfo}>
+                                    <Text style={styles.postName}>
+                                        {username}{' '}
+                                        <MaterialIcons
+                                            name="verified"
+                                            size={14}
+                                            color={Colors.primary}
+                                        />
+                                        {timestamp ? (
+                                            <Text style={styles.postTime}> · {timestamp}</Text>
+                                        ) : null}
+                                    </Text>
+                                    {displayName !== username && (
+                                        <Text style={styles.postDisplayName}>{displayName}</Text>
+                                    )}
+                                </View>
+                                <TouchableOpacity style={styles.followBtn}>
+                                    <Text style={styles.followBtnText}>Follow</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {caption ? (
+                                <Text style={styles.postCaption}>{caption}</Text>
+                            ) : null}
+
+                            {mediaUri && (
+                                <View style={styles.mediaContainer}>
+                                    <Image
+                                        source={{ uri: mediaUri }}
+                                        style={styles.postImage}
+                                        resizeMode="cover"
+                                    />
+                                    <TouchableOpacity style={styles.muteBtn}>
+                                        <Ionicons
+                                            name="volume-mute"
+                                            size={18}
+                                            color="#FFF"
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            {/* Actions */}
+                            <View style={styles.postActions}>
+                                <View style={styles.actionItem}>
+                                    <Ionicons name="heart-outline" size={20} color="#8A8A8A" />
+                                    {likes > 0 && (
+                                        <Text style={styles.actionText}>{likes}</Text>
+                                    )}
+                                </View>
+                                <View style={styles.actionItem}>
+                                    <MaterialCommunityIcons
+                                        name="comment-outline"
+                                        size={20}
+                                        color="#8A8A8A"
+                                    />
+                                    {comments > 0 && (
+                                        <Text style={styles.actionText}>{comments}</Text>
+                                    )}
+                                </View>
+                                <View style={styles.actionItem}>
+                                    <Feather name="repeat" size={20} color="#8A8A8A" />
+                                    {shares > 0 && (
+                                        <Text style={styles.actionText}>{shares}</Text>
+                                    )}
+                                </View>
+                                <View style={styles.actionItem}>
+                                    <Feather name="send" size={20} color="#8A8A8A" />
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Comments */}
+                        {postComments.length > 0 ? (
+                            <View style={styles.commentsSection}>
+                                <Text style={styles.commentsSectionTitle}>Comments</Text>
+                                {postComments.map((comment: any, idx: number) => {
+                                    const commenter =
+                                        comment.author || comment.user || {};
+                                    const commenterAvatar =
+                                        commenter.profilePictureUrl ||
+                                        commenter.avatarUrl ||
+                                        `https://i.pravatar.cc/150?img=${idx + 5}`;
+                                    const commenterName =
+                                        commenter.username || commenter.name || 'User';
+                                    const commentText = comment.text || comment.message || comment.content || '';
+                                    return (
+                                        <View key={comment.id || idx} style={styles.commentRow}>
+                                            <Image
+                                                source={{ uri: commenterAvatar }}
+                                                style={styles.commentAvatar}
+                                            />
+                                            <View style={styles.commentContent}>
+                                                <View style={styles.commentHeader}>
+                                                    <Text style={styles.commentName}>
+                                                        {commenterName}
+                                                    </Text>
+                                                    <Text style={styles.commentTime}>
+                                                        {timeAgo(comment.createdAt)}
+                                                    </Text>
+                                                </View>
+                                                <Text style={styles.commentText}>{commentText}</Text>
+                                            </View>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        ) : (
+                            <View style={styles.noCommentsBox}>
+                                <MaterialCommunityIcons
+                                    name="comment-outline"
+                                    size={32}
+                                    color="#DDD"
+                                />
+                                <Text style={styles.noCommentsText}>
+                                    Be the first to comment
                                 </Text>
                             </View>
-                            <TouchableOpacity style={styles.followBtn}>
-                                <Text style={styles.followBtnText}>Follow</Text>
-                            </TouchableOpacity>
-                        </View>
-                        
-                        <Text style={styles.postCaption}>it's Friday. Let party together</Text>
-                        
-                        <View style={styles.mediaContainer}>
-                            <Image source={{ uri: 'https://images.unsplash.com/photo-1571008887538-b36bb32f4571?w=600' }} style={styles.postImage} />
-                            <View style={styles.playOverlay}>
-                                <View style={styles.playBtnOuter}>
-                                    <Ionicons name="play" size={24} color="#8E2DE2" style={{ marginLeft: 3 }} />
-                                </View>
-                            </View>
-                            <TouchableOpacity style={styles.muteBtn}>
-                                <Ionicons name="volume-mute" size={18} color="#FFF" />
-                            </TouchableOpacity>
-                        </View>
+                        )}
+                    </ScrollView>
 
-                        <View style={styles.postActions}>
-                            <View style={styles.actionItem}>
-                                <Ionicons name="heart-outline" size={20} color="#8A8A8A" />
-                                <Text style={styles.actionText}>441</Text>
-                            </View>
-                            <View style={styles.actionItem}>
-                                <MaterialCommunityIcons name="comment-outline" size={20} color="#8A8A8A" />
-                                <Text style={styles.actionText}>108</Text>
-                            </View>
-                            <View style={styles.actionItem}>
-                                <Feather name="repeat" size={20} color="#8A8A8A" />
-                                <Text style={styles.actionText}>63</Text>
-                            </View>
-                            <View style={styles.actionItem}>
-                                <Feather name="send" size={20} color="#8A8A8A" />
-                                <Text style={styles.actionText}>579</Text>
-                            </View>
+                    {/* Input Bar */}
+                    <View style={styles.inputContainer}>
+                        <View style={styles.inputWrapper}>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Add your reply..."
+                                placeholderTextColor="#888"
+                                value={replyText}
+                                onChangeText={setReplyText}
+                            />
                         </View>
+                        <TouchableOpacity style={styles.sendBtn}>
+                            <Ionicons name="arrow-up" size={20} color="#FFF" />
+                        </TouchableOpacity>
                     </View>
-
-                    {/* Comments */}
-                    <View style={styles.commentsSection}>
-                        {COMMENTS.map((comment) => (
-                            <View key={comment.id} style={styles.commentRow}>
-                                <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
-                                <View style={styles.commentContent}>
-                                    <View style={styles.commentHeader}>
-                                        <Text style={styles.commentName}>
-                                            {comment.name} <MaterialIcons name="verified" size={12} color={Colors.primary} />
-                                            <Text style={styles.commentTime}> {comment.time}</Text>
-                                        </Text>
-                                        <TouchableOpacity>
-                                            <MaterialCommunityIcons name="dots-horizontal" size={20} color="#000" />
-                                        </TouchableOpacity>
-                                    </View>
-                                    <Text style={styles.commentText}>{comment.text}</Text>
-                                    
-                                    <View style={styles.commentActions}>
-                                        <View style={styles.actionItem}>
-                                            <Ionicons name="heart-outline" size={16} color="#8A8A8A" />
-                                            <Text style={styles.actionTextSmall}>441</Text>
-                                        </View>
-                                        <View style={styles.actionItem}>
-                                            <MaterialCommunityIcons name="comment-outline" size={16} color="#8A8A8A" />
-                                            <Text style={styles.actionTextSmall}>108</Text>
-                                        </View>
-                                        <View style={styles.actionItem}>
-                                            <Feather name="repeat" size={16} color="#8A8A8A" />
-                                            <Text style={styles.actionTextSmall}>63</Text>
-                                        </View>
-                                        <View style={styles.actionItem}>
-                                            <Feather name="send" size={16} color="#8A8A8A" />
-                                            <Text style={styles.actionTextSmall}>579</Text>
-                                        </View>
-                                    </View>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
-                </ScrollView>
-
-                {/* Input Bar */}
-                <View style={styles.inputContainer}>
-                    <View style={styles.inputWrapper}>
-                        <TextInput 
-                            style={styles.input}
-                            placeholder="Add your reply..."
-                            placeholderTextColor="#888"
-                        />
-                    </View>
-                    <TouchableOpacity style={styles.sendBtn}>
-                        <Ionicons name="arrow-up" size={20} color="#FFF" />
-                    </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+            )}
         </SafeAreaView>
     );
 }
@@ -190,6 +290,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     scrollContent: {
         paddingBottom: 100,
     },
@@ -211,10 +316,11 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     postAvatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         marginRight: 10,
+        backgroundColor: '#EEE',
     },
     postAuthorInfo: {
         flex: 1,
@@ -223,6 +329,11 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: '#333',
+    },
+    postDisplayName: {
+        fontSize: 12,
+        color: '#888',
+        marginTop: 2,
     },
     postTime: {
         fontSize: 13,
@@ -244,6 +355,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#333',
         marginBottom: 12,
+        lineHeight: 22,
     },
     mediaContainer: {
         width: '100%',
@@ -256,19 +368,7 @@ const styles = StyleSheet.create({
     postImage: {
         width: '100%',
         height: '100%',
-    },
-    playOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    playBtnOuter: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: 'rgba(255,255,255,0.9)',
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: '#F5F5F5',
     },
     muteBtn: {
         position: 'absolute',
@@ -277,7 +377,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: '#8E2DE2',
+        backgroundColor: Colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -300,6 +400,12 @@ const styles = StyleSheet.create({
     commentsSection: {
         paddingHorizontal: 20,
     },
+    commentsSectionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#333',
+        marginBottom: 16,
+    },
     commentRow: {
         flexDirection: 'row',
         marginBottom: 20,
@@ -309,14 +415,15 @@ const styles = StyleSheet.create({
         height: 36,
         borderRadius: 18,
         marginRight: 12,
+        backgroundColor: '#EEE',
     },
     commentContent: {
         flex: 1,
     },
     commentHeader: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         marginBottom: 4,
     },
     commentName: {
@@ -325,22 +432,22 @@ const styles = StyleSheet.create({
         color: '#333',
     },
     commentTime: {
+        fontSize: 12,
         color: '#888',
-        fontWeight: '400',
     },
     commentText: {
         fontSize: 14,
         color: '#333',
-        marginBottom: 10,
+        lineHeight: 20,
     },
-    commentActions: {
-        flexDirection: 'row',
+    noCommentsBox: {
         alignItems: 'center',
+        paddingVertical: 32,
+        gap: 8,
     },
-    actionTextSmall: {
-        marginLeft: 4,
-        fontSize: 12,
-        color: '#8A8A8A',
+    noCommentsText: {
+        fontSize: 14,
+        color: '#BBB',
     },
     inputContainer: {
         flexDirection: 'row',
@@ -369,7 +476,7 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: '#8E2DE2',
+        backgroundColor: Colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
     },
