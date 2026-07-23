@@ -1,5 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Dimensions,
@@ -9,14 +9,31 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
 
 const { width, height } = Dimensions.get('window');
 
 export default function GoLivePreviewScreen() {
+    const { id: streamId } = useLocalSearchParams<{ id?: string }>();
     const [showEndLiveModal, setShowEndLiveModal] = useState(false);
     const [audioMode, setAudioMode] = useState<'voice' | 'camera'>('camera');
+    const [starting, setStarting] = useState(false);
+
+    const handleStartLive = async () => {
+        if (!streamId) return;
+        try {
+            setStarting(true);
+            await liveStreamService.startStream(streamId);
+            router.replace({ pathname: '/live-dashboard', params: { id: streamId } });
+        } catch (e) {
+            console.error('Failed to start stream:', e);
+        } finally {
+            setStarting(false);
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -43,9 +60,14 @@ export default function GoLivePreviewScreen() {
                         <TouchableOpacity
                             style={styles.goLiveBtn}
                             activeOpacity={0.85}
-                            onPress={() => router.replace('/live-dashboard')}
+                            onPress={handleStartLive}
+                            disabled={starting}
                         >
-                            <Text style={styles.goLiveBtnText}>Go LIVE</Text>
+                            {starting ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Text style={styles.goLiveBtnText}>Go LIVE</Text>
+                            )}
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.flipBtn}>

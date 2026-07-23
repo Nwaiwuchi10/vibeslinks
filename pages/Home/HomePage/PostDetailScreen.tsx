@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     ActivityIndicator,
     Image,
@@ -21,6 +21,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { postService } from '@/services/postService';
+import { userService } from '@/services/userService';
 
 function timeAgo(dateStr?: string): string {
     if (!dateStr) return '';
@@ -34,25 +35,116 @@ function timeAgo(dateStr?: string): string {
 }
 
 export default function PostDetailScreen() {
-    const params = useLocalSearchParams<{ id?: string }>();
+    const params = useLocalSearchParams<{ id?: string; focusComment?: string }>();
     const postId = params.id;
+    const focusComment = params.focusComment === 'true';
 
+    const commentInputRef = useRef<TextInput>(null);
     const [post, setPost] = useState<any>(null);
     const [loading, setLoading] = useState(!!postId);
     const [replyText, setReplyText] = useState('');
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [commentsList, setCommentsList] = useState<any[]>([]);
+    const [likesCount, setLikesCount] = useState(0);
+    const [hasLiked, setHasLiked] = useState(false);
 
     useEffect(() => {
         if (!postId) {
             setLoading(false);
             return;
         }
-        postService.getPostById(postId).then((data) => {
-            setPost(data);
-            setLoading(false);
-        });
+        
+        const loadData = async () => {
+            try {
+                const data = await postService.getPostById(postId);
+                setPost(data);
+                const postAuthor = data?.author || data?.user;
+                if (postAuthor?.isFollowing !== undefined) {
+                    setIsFollowing(postAuthor.isFollowing);
+                }
+
+                // Load comments
+                const commentsRes = await postService.getPostComments(postId);
+                if (Array.isArray(commentsRes)) {
+                    setCommentsList(commentsRes);
+                } else if (Array.isArray(commentsRes?.comments)) {
+                    setCommentsList(commentsRes.comments);
+                } else if (Array.isArray(data?.comments)) {
+                    setCommentsList(data.comments);
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadData();
     }, [postId]);
 
+    useEffect(() => {
+        if (post) {
+            setLikesCount(post.likesCount ?? 0);
+            const hasReacted = post?.engagement?.myReaction === 'like' || post?.myReaction === 'like' || post?.engagement?.like === true;
+            setHasLiked(!!hasReacted);
+        }
+    }, [post]);
+
     const author = post?.author || post?.user;
+
+    const handleFollowToggle = async () => {
+        if (!author?.id && !author?._id) return;
+        const authorId = author.id || author._id;
+        try {
+            if (isFollowing) {
+                await userService.unfollowUser(authorId);
+                setIsFollowing(false);
+            } else {
+                await userService.followUser(authorId);
+                setIsFollowing(true);
+            }
+        } catch (err) {
+            console.error('Follow action failed:', err);
+        }
+    };
+
+    const handleLikeToggle = async () => {
+        if (!postId) return;
+        try {
+            if (hasLiked) {
+                await postService.removeReactionFromPost(postId);
+                setHasLiked(false);
+                setLikesCount(prev => Math.max(0, prev - 1));
+            } else {
+                await postService.reactToPost(postId, 'like');
+                setHasLiked(true);
+                setLikesCount(prev => prev + 1);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleSendComment = async () => {
+        if (!postId || !replyText.trim()) return;
+        try {
+            const newComment = await postService.createPostComment(postId, replyText);
+            setCommentsList(prev => [newComment, ...prev]);
+            setReplyText('');
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    useEffect(() => {
+        if (focusComment && !loading && commentInputRef.current) {
+            const t = setTimeout(() => {
+                commentInputRef.current?.focus();
+            }, 150);
+            return () => clearTimeout(t);
+        }
+    }, [focusComment, loading]);
+
     const avatarUri =
         author?.profilePictureUrl ||
         author?.avatarUrl ||
@@ -62,10 +154,10 @@ export default function PostDetailScreen() {
     const caption = post?.content || post?.caption || 'Check this out!';
     const mediaUri = post?.mediaUrls?.[0] || post?.mediaUrl || post?.imageUrl || null;
     const timestamp = timeAgo(post?.createdAt);
-    const likes = post?.likesCount ?? 0;
-    const comments = post?.commentsCount ?? 0;
+    const likes = likesCount;
+    const comments = commentsList.length;
     const shares = post?.sharesCount ?? 0;
-    const postComments: any[] = post?.comments || [];
+    const postComments: any[] = commentsList;
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -122,8 +214,13 @@ export default function PostDetailScreen() {
                                         <Text style={styles.postDisplayName}>{displayName}</Text>
                                     )}
                                 </View>
-                                <TouchableOpacity style={styles.followBtn}>
-                                    <Text style={styles.followBtnText}>Follow</Text>
+                                <TouchableOpacity 
+                                    style={[styles.followBtn, isFollowing && styles.followingBtn]}
+                                    onPress={handleFollowToggle}
+                                >
+                                    <Text style={[styles.followBtnText, isFollowing && styles.followingBtnText]}>
+                                        {isFollowing ? 'Following' : 'Follow'}
+                                    </Text>
                                 </TouchableOpacity>
                             </View>
 
@@ -150,12 +247,18 @@ export default function PostDetailScreen() {
 
                             {/* Actions */}
                             <View style={styles.postActions}>
-                                <View style={styles.actionItem}>
-                                    <Ionicons name="heart-outline" size={20} color="#8A8A8A" />
+                                <TouchableOpacity style={styles.actionItem} onPress={handleLikeToggle}>
+                                    <Ionicons
+                                        name={hasLiked ? "heart" : "heart-outline"}
+                                        size={20}
+                                        color={hasLiked ? Colors.primary : "#8A8A8A"}
+                                    />
                                     {likes > 0 && (
-                                        <Text style={styles.actionText}>{likes}</Text>
+                                        <Text style={[styles.actionText, hasLiked && { color: Colors.primary }]}>
+                                            {likes}
+                                        </Text>
                                     )}
-                                </View>
+                                </TouchableOpacity>
                                 <View style={styles.actionItem}>
                                     <MaterialCommunityIcons
                                         name="comment-outline"
@@ -231,6 +334,7 @@ export default function PostDetailScreen() {
                     <View style={styles.inputContainer}>
                         <View style={styles.inputWrapper}>
                             <TextInput
+                                ref={commentInputRef}
                                 style={styles.input}
                                 placeholder="Add your reply..."
                                 placeholderTextColor="#888"
@@ -238,7 +342,7 @@ export default function PostDetailScreen() {
                                 onChangeText={setReplyText}
                             />
                         </View>
-                        <TouchableOpacity style={styles.sendBtn}>
+                        <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment}>
                             <Ionicons name="arrow-up" size={20} color="#FFF" />
                         </TouchableOpacity>
                     </View>
@@ -346,10 +450,18 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 8,
     },
+    followingBtn: {
+        backgroundColor: '#FFF',
+        borderWidth: 1,
+        borderColor: '#EFEFEF',
+    },
     followBtnText: {
         color: '#FFF',
         fontSize: 13,
         fontWeight: '600',
+    },
+    followingBtnText: {
+        color: '#000',
     },
     postCaption: {
         fontSize: 15,

@@ -1,9 +1,11 @@
-import { Colors } from '../../../constants/Colors';
+import { Colors } from '@/constants/Colors';
 import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { resolveImageUrl } from '@/services/apiClient';
+import { userService } from '@/services/userService';
+import { postService } from '@/services/postService';
 
 export type PostData = {
     id?: string;
@@ -14,23 +16,37 @@ export type PostData = {
     imageUrl?: string;
     author?: {
         id?: string;
+        _id?: string;
         name?: string;
         username?: string;
         profilePictureUrl?: string;
         avatarUrl?: string;
+        isFollowing?: boolean;
     };
     user?: {
         id?: string;
+        _id?: string;
         name?: string;
         username?: string;
         profilePictureUrl?: string;
         avatarUrl?: string;
+        isFollowing?: boolean;
     };
     likesCount?: number;
     commentsCount?: number;
     sharesCount?: number;
     createdAt?: string;
     visibility?: string;
+    myReaction?: string;
+    engagement?: {
+        like?: boolean;
+        love?: number;
+        wow?: number;
+        sad?: number;
+        angry?: number;
+        total?: number;
+        myReaction?: string;
+    };
 };
 
 interface Props {
@@ -53,15 +69,90 @@ function timeAgo(dateStr?: string): string {
 export default function PhotoSocialPost({ post, imageSource }: Props) {
     const [showOptions, setShowOptions] = useState(false);
     const [showHideModal, setShowHideModal] = useState(false);
+    const [isHidden, setIsHidden] = useState(false);
+
+    const author = post?.author || post?.user;
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [likesCount, setLikesCount] = useState(post?.likesCount ?? 0);
+    const [hasLiked, setHasLiked] = useState(false);
+
+    useEffect(() => {
+        if (author?.isFollowing !== undefined) {
+            setIsFollowing(author.isFollowing);
+        }
+    }, [author]);
+
+    useEffect(() => {
+        if (post?.likesCount !== undefined) {
+            setLikesCount(post.likesCount);
+        }
+        const hasReacted = post?.engagement?.myReaction === 'like' || post?.myReaction === 'like' || post?.engagement?.like === true;
+        setHasLiked(!!hasReacted);
+    }, [post]);
+
+    const handleLikeToggle = async () => {
+        if (!post?.id) return;
+        try {
+            if (hasLiked) {
+                await postService.removeReactionFromPost(post.id);
+                setHasLiked(false);
+                setLikesCount(prev => Math.max(0, prev - 1));
+            } else {
+                await postService.reactToPost(post.id, 'like');
+                setHasLiked(true);
+                setLikesCount(prev => prev + 1);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     const handleOptionsPress = () => setShowOptions(true);
+    
     const handleHidePress = () => {
         setShowOptions(false);
         setTimeout(() => setShowHideModal(true), 300);
     };
 
-    // Resolve fields from the post object, with fallbacks for legacy imageSource usage
-    const author = post?.author || post?.user;
+    const handleHideConfirm = () => {
+        setShowHideModal(false);
+        setIsHidden(true);
+    };
+
+    const handleFollow = async () => {
+        const authorId = author?.id || author?._id;
+        if (!authorId) return;
+        try {
+            await userService.followUser(authorId);
+            setIsFollowing(true);
+            setShowOptions(false);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleUnfollow = async () => {
+        const authorId = author?.id || author?._id;
+        if (!authorId) return;
+        try {
+            await userService.unfollowUser(authorId);
+            setIsFollowing(false);
+            setShowOptions(false);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleReport = () => {
+        setShowOptions(false);
+        if (post?.id) {
+            router.push({ pathname: '/report', params: { id: post.id, type: 'post' } });
+        }
+    };
+
+    if (isHidden) {
+        return null;
+    }
     const avatarUri = resolveImageUrl(
         author?.profilePictureUrl ||
         author?.avatarUrl ||
@@ -87,45 +178,67 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
         }
     };
 
+    const handleCommentPress = () => {
+        if (post?.id) {
+            router.push({ pathname: '/post-details', params: { id: post.id, focusComment: 'true' } });
+        } else {
+            router.push('/post-details');
+        }
+    };
+
     return (
         <>
-            <TouchableOpacity style={styles.socialCard} activeOpacity={0.9} onPress={goToDetail}>
+            <View style={styles.socialCard}>
                 <View style={styles.socialHeader}>
-                    <Image source={{ uri: avatarUri }} style={styles.socialAvatar} />
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.socialName} numberOfLines={1}>
-                            {username}{' '}
-                            <MaterialIcons name="verified" size={12} color={Colors.primary} />
-                            {timestamp ? (
-                                <Text style={styles.socialTime}> · {timestamp}</Text>
-                            ) : null}
-                        </Text>
-                        {displayName !== username && (
-                            <Text style={styles.displayName} numberOfLines={1}>
-                                {displayName}
+                    <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                        activeOpacity={0.7}
+                        onPress={goToDetail}
+                    >
+                        <Image source={{ uri: avatarUri }} style={styles.socialAvatar} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.socialName} numberOfLines={1}>
+                                {username}{' '}
+                                <MaterialIcons name="verified" size={12} color={Colors.primary} />
+                                {timestamp ? (
+                                    <Text style={styles.socialTime}> · {timestamp}</Text>
+                                ) : null}
                             </Text>
-                        )}
-                    </View>
+                            {displayName !== username && (
+                                <Text style={styles.displayName} numberOfLines={1}>
+                                    {displayName}
+                                </Text>
+                            )}
+                        </View>
+                    </TouchableOpacity>
                     <TouchableOpacity style={{ padding: 4 }} onPress={handleOptionsPress}>
                         <MaterialCommunityIcons name="dots-horizontal" size={20} color="#333" />
                     </TouchableOpacity>
                 </View>
 
-                {caption ? <Text style={styles.socialCaption}>{caption}</Text> : null}
+                <TouchableOpacity activeOpacity={0.9} onPress={goToDetail}>
+                    {caption ? <Text style={styles.socialCaption}>{caption}</Text> : null}
 
-                {resolvedImage && (
-                    <Image source={resolvedImage} style={styles.socialImage} />
-                )}
+                    {resolvedImage && (
+                        <Image source={resolvedImage} style={styles.socialImage} />
+                    )}
+                </TouchableOpacity>
 
                 <View style={styles.socialActions}>
-                    <View style={styles.actionItem}>
-                        <Ionicons name="heart-outline" size={18} color="#888" />
-                        <Text style={styles.actionText}>{likes > 0 ? likes : ''}</Text>
-                    </View>
-                    <View style={styles.actionItem}>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleLikeToggle}>
+                        <Ionicons
+                            name={hasLiked ? "heart" : "heart-outline"}
+                            size={18}
+                            color={hasLiked ? Colors.primary : "#888"}
+                        />
+                        <Text style={[styles.actionText, hasLiked && { color: Colors.primary }]}>
+                            {likesCount > 0 ? likesCount : ''}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleCommentPress}>
                         <MaterialCommunityIcons name="comment-outline" size={18} color="#888" />
                         <Text style={styles.actionText}>{comments > 0 ? comments : ''}</Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={styles.actionItem}>
                         <Feather name="repeat" size={18} color="#888" />
                         <Text style={styles.actionText}>{shares > 0 ? shares : ''}</Text>
@@ -134,7 +247,7 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                         <Feather name="share" size={18} color="#888" />
                     </View>
                 </View>
-            </TouchableOpacity>
+            </View>
 
             {/* Options Modal */}
             <Modal
@@ -150,16 +263,19 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                     />
                     <View style={styles.optionsContent}>
                         <View style={styles.dragIndicator} />
-                        <TouchableOpacity style={styles.optionBtn}>
-                            <Text style={styles.optionBtnText}>Follow</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.optionBtn}>
-                            <Text style={styles.optionBtnText}>Unfollow</Text>
-                        </TouchableOpacity>
+                        {isFollowing ? (
+                            <TouchableOpacity style={styles.optionBtn} onPress={handleUnfollow}>
+                                <Text style={styles.optionBtnText}>Unfollow</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={styles.optionBtn} onPress={handleFollow}>
+                                <Text style={styles.optionBtnText}>Follow</Text>
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity style={styles.optionBtn} onPress={handleHidePress}>
                             <Text style={styles.optionBtnText}>Hide</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.optionBtn}>
+                        <TouchableOpacity style={styles.optionBtn} onPress={handleReport}>
                             <Text style={[styles.optionBtnText, { color: '#E91E63' }]}>Report</Text>
                         </TouchableOpacity>
                     </View>
@@ -187,7 +303,7 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                         <View style={styles.hideBtnRow}>
                             <TouchableOpacity
                                 style={styles.hideConfirmBtn}
-                                onPress={() => setShowHideModal(false)}
+                                onPress={handleHideConfirm}
                             >
                                 <Text style={styles.hideConfirmText}>Hide Post</Text>
                             </TouchableOpacity>

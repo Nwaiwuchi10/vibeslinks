@@ -109,4 +109,32 @@ export const postService = {
     store.dispatch(showToast({ type: 'success', message: 'Post deleted.' }));
     return response.data;
   },
+
+  // ─── Post Reactions ──────────────────────────────────────────────────────────
+  async reactToPost(id: string, type: 'like' | 'love' | 'wow' | 'sad' | 'angry') {
+    return (await apiClient.post(`/posts/${id}/reactions/${type}`)).data;
+  },
+
+  async removeReactionFromPost(id: string) {
+    return (await apiClient.delete(`/posts/${id}/reactions`)).data;
+  },
+
+  // ─── Post Comments ───────────────────────────────────────────────────────────
+  async getPostComments(id: string) {
+    return (await apiClient.get(`/posts/${id}/comments`)).data;
+  },
+
+  async createPostComment(id: string, text: string) {
+    const response = await apiClient.post(`/posts/${id}/comments`, { text });
+    return response.data;
+  },
+
+  // ─── Comment Reactions ───────────────────────────────────────────────────────
+  async reactToPostComment(id: string, commentId: string, type: 'like' | 'love' | 'wow' | 'sad' | 'angry') {
+    return (await apiClient.post(`/posts/${id}/comments/${commentId}/reactions/${type}`)).data;
+  },
+
+  async removeReactionFromPostComment(id: string, commentId: string) {
+    return (await apiClient.delete(`/posts/${id}/comments/${commentId}/reactions`)).data;
+  },
 };

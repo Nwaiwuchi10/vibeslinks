@@ -91,4 +91,26 @@ export const liveStreamService = {
     store.dispatch(showToast({ type: 'success', message: 'Live stream created successfully!' }));
     return response.data;
   },
+
+  async updateStream(id: string, data: Partial<{ title: string; category: string; privacy: string; ticketPrice: number }>) {
+    return (await apiClient.patch(`/live-streams/${id}`, data)).data;
+  },
+
+  async startStream(id: string) {
+    const response = await apiClient.post(`/live-streams/${id}/start`);
+    store.dispatch(showToast({ type: 'success', message: 'Stream started! You are live!' }));
+    return response.data;
+  },
+
+  async endStream(id: string) {
+    const response = await apiClient.post(`/live-streams/${id}/end`);
+    store.dispatch(showToast({ type: 'success', message: 'Stream ended.' }));
+    return response.data;
+  },
+
+  async deleteStream(id: string) {
+    const response = await apiClient.delete(`/live-streams/${id}`);
+    store.dispatch(showToast({ type: 'success', message: 'Live stream deleted.' }));
+    return response.data;
+  },
 };

@@ -257,4 +257,16 @@ export const userService = {
       return [];
     }
   },
+
+  async followUser(id: string) {
+    const response = await apiClient.post(`/users/${id}/follow`);
+    store.dispatch(showToast({ type: 'success', message: 'User followed successfully.' }));
+    return response.data;
+  },
+
+  async unfollowUser(id: string) {
+    const response = await apiClient.delete(`/users/${id}/follow`);
+    store.dispatch(showToast({ type: 'success', message: 'User unfollowed successfully.' }));
+    return response.data;
+  },
 };

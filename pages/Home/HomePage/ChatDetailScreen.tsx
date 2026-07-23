@@ -38,12 +38,12 @@ export default function ChatDetailScreen() {
                 console.log('[ChatDetailScreen] Error fetching message history:', err);
             });
             // Subscribe to real-time updates for this room
-            socketService.joinConversation(conversationId);
+            socketService.joinRoom(conversationId);
         }
 
         return () => {
             if (conversationId && conversationId !== 'mock-conversation-id') {
-                socketService.leaveConversation(conversationId);
+                socketService.leaveRoom(conversationId);
             }
         };
     }, [conversationId]);
@@ -94,7 +94,7 @@ export default function ChatDetailScreen() {
         },
     ];
 
-    const displayMessages = liveMessages.length > 0
+    const displayMessages = conversationId !== 'mock-conversation-id'
         ? liveMessages.map((msg: any) => ({
             id: msg.id,
             senderId: msg.senderId || msg.sender?.id,

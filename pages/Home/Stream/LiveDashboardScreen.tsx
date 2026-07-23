@@ -14,6 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { liveStreamService } from '@/services/liveStreamService';
+import { socketService } from '@/services/socketService';
 import { useAppSelector } from '@/store/hooks';
 
 const { width, height } = Dimensions.get('window');
@@ -58,7 +59,44 @@ export default function LiveDashboardScreen() {
                 setViewerCount(data?.viewerCount || 0);
             })
             .catch(() => {});
-    }, [streamId]);
+
+        // Join live stream room
+        socketService.joinRoom(`livestream:${streamId}`);
+        if (authUser?.id) {
+            socketService.joinRoom(`host:${authUser.id}`);
+        }
+
+        // Listen for reactions
+        socketService.onLivestreamReaction((data: any) => {
+            console.log('[LiveDashboard] Reaction received:', data);
+            const type = data.emoji || data.type;
+            if (type) {
+                setReactionCounts(prev => ({ ...prev, [type]: (prev[type] || 0) + 1 }));
+            }
+        });
+
+        // Listen for viewer joined
+        socketService.onLivestreamViewerJoined((data: any) => {
+            console.log('[LiveDashboard] Viewer joined:', data);
+            setViewerCount(prev => prev + 1);
+        });
+
+        // Listen for live stream updates
+        socketService.onLivestreamUpdated((data: any) => {
+            console.log('[LiveDashboard] Stream updated:', data);
+            if (data?.viewerCount !== undefined) {
+                setViewerCount(data.viewerCount);
+            }
+        });
+
+        return () => {
+            socketService.leaveRoom(`livestream:${streamId}`);
+            if (authUser?.id) {
+                socketService.leaveRoom(`host:${authUser.id}`);
+            }
+            socketService.offLivestreamEvents();
+        };
+    }, [streamId, authUser]);
 
     const handleReact = async (type: 'love' | 'clap' | 'like' | 'fire') => {
         if (!streamId) return;

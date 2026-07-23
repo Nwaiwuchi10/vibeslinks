@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import {
     Image,
     Modal,
@@ -9,9 +9,12 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppSelector } from '@/store/hooks';
+import { chatService } from '@/services/chatService';
 
 const STORIES = [
     { id: '1', name: 'Your Story', image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150', isAdd: true },
@@ -20,76 +23,55 @@ const STORIES = [
     { id: '4', name: 'ramonbrown', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' },
 ];
 
-const CHATS = [
-    {
-        id: '1',
-        name: 'Roland',
-        message: 'You dey come tonight?',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150',
-    },
-    {
-        id: '2',
-        name: 'Joseph Ebuka',
-        message: 'Sent a photo',
-        time: 'Yesterday',
-        image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-        unread: 2,
-        pinned: true,
-    },
-    {
-        id: '3',
-        name: 'Telly Khabar',
-        message: 'You dey come tonight?',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1517070208541-6ddc4d3efbcb?w=150',
-    },
-    {
-        id: '4',
-        name: 'Joseph Ebuka',
-        message: 'Sent a photo',
-        time: '11:21 AM',
-        image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-        unread: 3,
-        muted: true,
-    },
-    {
-        id: '5',
-        name: 'The lion King',
-        message: 'You dey were added',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=150', // Tiger
-    },
-];
-
 export default function MessagesListScreen() {
     const [showFilter, setShowFilter] = useState(false);
+    const threads = useAppSelector((state) => state.chat.threads);
+    const [loading, setLoading] = useState(true);
 
-    const renderChat = ({ item }: { item: typeof CHATS[0] }) => (
-        <TouchableOpacity
-            style={styles.chatRow}
-            activeOpacity={0.8}
-            onPress={() => router.push({ pathname: '/chat-detail', params: { id: item.id, name: item.name, image: item.image } })}
-        >
-            <Image source={{ uri: item.image }} style={styles.chatAvatar} />
-            <View style={styles.chatBody}>
-                <Text style={styles.chatName}>{item.name}</Text>
-                <Text style={styles.chatMessage} numberOfLines={1}>{item.message}</Text>
-            </View>
-            <View style={styles.chatRight}>
-                <Text style={[styles.chatTime, item.unread ? styles.chatTimeUnread : null]}>{item.time}</Text>
-                <View style={styles.chatIcons}>
-                    {item.muted && <Ionicons name="volume-mute" size={14} color="#A0A0A0" />}
-                    {item.pinned && <MaterialCommunityIcons name="pin" size={14} color="#A0A0A0" />}
-                    {item.unread && (
-                        <View style={styles.unreadBadge}>
-                            <Text style={styles.unreadText}>{item.unread}</Text>
-                        </View>
-                    )}
-                </View>
-            </View>
-        </TouchableOpacity>
+    useFocusEffect(
+        useCallback(() => {
+            setLoading(true);
+            chatService.getThreads()
+                .catch(() => {})
+                .finally(() => setLoading(false));
+        }, [])
     );
+
+    const renderChat = ({ item }: { item: any }) => {
+        const lastMsg = item.lastMessage?.message || 'No messages yet';
+        const lastMsgTime = item.lastMessage?.createdAt
+            ? new Date(item.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
+        
+        const name = item.title || item.name || 'Chat';
+        const image = item.imageUrl || item.avatarUrl || 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150';
+
+        return (
+            <TouchableOpacity
+                style={styles.chatRow}
+                activeOpacity={0.8}
+                onPress={() => router.push({ pathname: '/chat-detail', params: { id: item.id, name, image } })}
+            >
+                <Image source={{ uri: image }} style={styles.chatAvatar} />
+                <View style={styles.chatBody}>
+                    <Text style={styles.chatName}>{name}</Text>
+                    <Text style={styles.chatMessage} numberOfLines={1}>{lastMsg}</Text>
+                </View>
+                <View style={styles.chatRight}>
+                    <Text style={[styles.chatTime, item.unreadCount ? styles.chatTimeUnread : null]}>{lastMsgTime}</Text>
+                    <View style={styles.chatIcons}>
+                        {item.muted && <Ionicons name="volume-mute" size={14} color="#A0A0A0" />}
+                        {item.pinned && <MaterialCommunityIcons name="pin" size={14} color="#A0A0A0" />}
+                        {item.unreadCount > 0 && (
+                            <View style={styles.unreadBadge}>
+                                <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -146,7 +128,18 @@ export default function MessagesListScreen() {
 
                 {/* Chats List */}
                 <View style={styles.chatsContainer}>
-                    {CHATS.map(chat => <React.Fragment key={chat.id}>{renderChat({ item: chat })}</React.Fragment>)}
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#8E2DE2" style={{ marginVertical: 30 }} />
+                    ) : threads.length === 0 ? (
+                        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                            <MaterialCommunityIcons name="message-text-outline" size={48} color="#DDD" />
+                            <Text style={{ color: '#999', marginTop: 12, fontSize: 14 }}>
+                                No threads yet. Start a conversation!
+                            </Text>
+                        </View>
+                    ) : (
+                        threads.map(chat => <React.Fragment key={chat.id}>{renderChat({ item: chat })}</React.Fragment>)
+                    )}
                 </View>
             </ScrollView>
 

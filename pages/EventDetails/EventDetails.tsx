@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import { eventService } from '@/services/eventService';
+import { userService } from '@/services/userService';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
 
@@ -36,6 +37,7 @@ const EventDetails = () => {
 
     const [friendsAttending, setFriendsAttending] = useState<any[]>([]);
     const [userReaction, setUserReaction] = useState<string | null>(null);
+    const [isFollowingHost, setIsFollowingHost] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -48,6 +50,11 @@ const EventDetails = () => {
                 const detailEvent = res?.event || res;
                 if (detailEvent?.userReaction) {
                     setUserReaction(detailEvent.userReaction);
+                }
+
+                const hostObj = detailEvent?.organizer?.host || detailEvent?.organizer || detailEvent?.host;
+                if (hostObj?.isFollowing !== undefined) {
+                    setIsFollowingHost(hostObj.isFollowing);
                 }
 
                 await eventService.getEventComments(id!);
@@ -64,6 +71,25 @@ const EventDetails = () => {
         }
         fetchDetails();
     }, [id]);
+
+    const handleFollowHostToggle = async () => {
+        const hostObj = event?.organizer?.host || event?.organizer || event?.host || event?.creator || event?.user;
+        if (!hostObj) return;
+        const hostId = hostObj.id || hostObj._id;
+        if (!hostId) return;
+
+        try {
+            if (isFollowingHost) {
+                await userService.unfollowUser(hostId);
+                setIsFollowingHost(false);
+            } else {
+                await userService.followUser(hostId);
+                setIsFollowingHost(true);
+            }
+        } catch (e) {
+            console.error('Follow action failed:', e);
+        }
+    };
 
     const handleReactionPress = async (type = 'love') => {
         if (!id) return;
@@ -246,8 +272,13 @@ const EventDetails = () => {
                                 <Text style={styles.hostLabel}>Hosted by</Text>
                                 <Text style={styles.hostName}>{host.name}</Text>
                             </View>
-                            <TouchableOpacity style={styles.followButton}>
-                                <Text style={styles.followButtonText}>Follow</Text>
+                            <TouchableOpacity 
+                                style={[styles.followButton, isFollowingHost && styles.followingButton]}
+                                onPress={handleFollowHostToggle}
+                            >
+                                <Text style={[styles.followButtonText, isFollowingHost && styles.followingButtonText]}>
+                                    {isFollowingHost ? 'Following' : 'Follow'}
+                                </Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -585,10 +616,17 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 20,
     },
+    followingButton: {
+        backgroundColor: Colors.primary,
+        borderColor: Colors.primary,
+    },
     followButtonText: {
         fontSize: 13,
         fontWeight: '700',
         color: Colors.primary,
+    },
+    followingButtonText: {
+        color: '#FFF',
     },
     mapContainer: {
         marginHorizontal: 20,

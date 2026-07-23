@@ -20,7 +20,7 @@ const USER_KEY = 'vibezlink_user_info';
 function AppContent() {
   const colorScheme = useColorScheme();
   const dispatch = useAppDispatch();
-  const { token, isAuthenticated } = useAppSelector((state) => state.auth);
+  const { token, isAuthenticated, user } = useAppSelector((state) => state.auth);
 
   // Restore session token on app launch
   useEffect(() => {
@@ -42,14 +42,14 @@ function AppContent() {
   // Handle WebSocket gateway connection based on auth token
   useEffect(() => {
     if (isAuthenticated && token) {
-      socketService.connect(token);
+      socketService.connect(token, user?.id);
     } else {
       socketService.disconnect();
     }
     return () => {
       socketService.disconnect();
     };
-  }, [token, isAuthenticated]);
+  }, [token, isAuthenticated, user]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
