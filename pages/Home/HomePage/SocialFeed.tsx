@@ -5,6 +5,7 @@ import { Colors } from '@/constants/Colors';
 import { postService } from '@/services/postService';
 import PhotoSocialPost from './PhotoSocialPost';
 import SuggestedHosts from './SuggestedHosts';
+import VibingEventPost from './VibingEventPost';
 
 const SocialFeed = ({ refreshKey }: { refreshKey?: number }) => {
     const [posts, setPosts] = useState<any[]>([]);
@@ -56,8 +57,14 @@ const SocialFeed = ({ refreshKey }: { refreshKey?: number }) => {
     return (
         <View>
             {posts.map((post: any, idx: number) => (
-                <PhotoSocialPost key={post.id || idx} post={post} />
+                <React.Fragment key={post.id || idx}>
+                    <PhotoSocialPost post={post} />
+                    {/* Render event post with attendee tracking after the 2nd post */}
+                    {idx === 1 && <VibingEventPost refreshKey={refreshKey} />}
+                </React.Fragment>
             ))}
+            {/* If fewer than 2 posts, still display event post */}
+            {posts.length < 2 && <VibingEventPost refreshKey={refreshKey} />}
             <SuggestedHosts />
         </View>
     );

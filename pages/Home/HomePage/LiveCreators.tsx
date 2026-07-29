@@ -28,6 +28,10 @@ const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
     viewerCount: c.viewerCount || null,
   }));
 
+  if (!loading && displayCreators.length === 0) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
@@ -43,11 +47,7 @@ const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
             <View key={i} style={[styles.liveCard, styles.liveCardPlaceholder, { backgroundColor: '#E8E8E8' }]} />
           ))}
         </ScrollView>
-      ) : displayCreators.length === 0 ? (
-        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-          <Text style={{ color: '#BBB', fontSize: 13 }}>No creators live right now</Text>
-        </View>
-      ) : (
+      ) : displayCreators.length === 0 ? null : (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveContainer}>
         {displayCreators.map((live: any) => (
           <TouchableOpacity

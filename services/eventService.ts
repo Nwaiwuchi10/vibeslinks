@@ -127,6 +127,15 @@ export const eventService = {
     return response.data;
   },
 
+  async getEventAttendees(id: string) {
+    try {
+      const response = await apiClient.get(`/events/${id}/attendees`, { silent: true });
+      return Array.isArray(response.data) ? response.data : response.data?.items || response.data?.attendees || [];
+    } catch {
+      return [];
+    }
+  },
+
   async getEventComments(id: string) {
     try {
       const response = await apiClient.get(`/events/${id}/comments`, { silent: true });
@@ -204,7 +213,12 @@ export const eventService = {
   },
 
   async getEventAttendees(id: string) {
-    return (await apiClient.get(`/events/${id}/attendees`)).data;
+    try {
+      const response = await apiClient.get(`/events/${id}/attendees`, { silent: true });
+      return Array.isArray(response.data) ? response.data : response.data?.items || response.data?.attendees || [];
+    } catch {
+      return [];
+    }
   },
 
   async getEventFriendsAttending(id: string) {

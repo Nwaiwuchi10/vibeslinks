@@ -23,6 +23,12 @@ import { Colors } from '@/constants/Colors';
 import { postService } from '@/services/postService';
 import { userService } from '@/services/userService';
 
+import { Video, ResizeMode } from 'expo-av';
+import { Dimensions, FlatList } from 'react-native';
+import { resolveImageUrl } from '@/services/apiClient';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 function timeAgo(dateStr?: string): string {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -32,6 +38,176 @@ function timeAgo(dateStr?: string): string {
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h`;
     return `${Math.floor(hrs / 24)}d`;
+}
+
+function isVideoUrl(url?: string | null, hint?: string): boolean {
+    if (hint === 'video') return true;
+    if (!url) return false;
+    return /\.(mp4|mov|avi|webm|mkv|m4v|3gp)(\?.*)?$/i.test(url);
+}
+
+function VideoCell({ uri }: { uri: string }) {
+    const videoRef = useRef<Video>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+
+    const togglePlay = async () => {
+        if (!videoRef.current) return;
+        if (isPlaying) {
+            await videoRef.current.pauseAsync();
+            setIsPlaying(false);
+        } else {
+            await videoRef.current.playAsync();
+            setIsPlaying(true);
+        }
+    };
+
+    const toggleMute = async () => {
+        if (!videoRef.current) return;
+        await videoRef.current.setIsMutedAsync(!isMuted);
+        setIsMuted(!isMuted);
+    };
+
+    const resolvedUri = resolveImageUrl(uri) || uri;
+
+    return (
+        <View style={styles.detailVideoContainer}>
+            <Video
+                ref={videoRef}
+                source={{ uri: resolvedUri }}
+                style={styles.detailVideoPlayer}
+                resizeMode={ResizeMode.COVER}
+                isLooping
+                isMuted={isMuted}
+                useNativeControls={false}
+                onError={(err) => {
+                    console.warn('[VideoCell] Detail Android/iOS Video Error:', err, 'URI:', resolvedUri);
+                }}
+                onPlaybackStatusUpdate={status => {
+                    if (status.isLoaded) {
+                        setIsPlaying(status.isPlaying ?? false);
+                        setIsMuted(status.isMuted ?? false);
+                    }
+                }}
+            />
+            <TouchableOpacity style={styles.detailVideoOverlay} onPress={togglePlay} activeOpacity={0.85}>
+                {!isPlaying && (
+                    <View style={styles.playBtnCircle}>
+                        <Ionicons name="play" size={28} color="#FFF" />
+                    </View>
+                )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.muteBtnCircle} onPress={toggleMute} activeOpacity={0.8}>
+                <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={16} color="#FFF" />
+            </TouchableOpacity>
+            <View style={styles.videoBadge}>
+                <Ionicons name="videocam" size={13} color="#FFF" />
+            </View>
+        </View>
+    );
+}
+
+function MediaCarousel({
+    allUrls,
+    typeHints,
+    mediaType,
+}: {
+    allUrls: string[];
+    typeHints: string[];
+    mediaType?: string;
+}) {
+    const [activeIndex, setActiveIndex] = useState(0);
+    const flatRef = useRef<FlatList>(null);
+
+    const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setActiveIndex(viewableItems[0].index ?? 0);
+        }
+    }).current;
+
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+
+    return (
+        <View style={styles.carouselWrapper}>
+            <FlatList
+                ref={flatRef}
+                data={allUrls}
+                keyExtractor={(_, idx) => String(idx)}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                bounces={false}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                renderItem={({ item: url, index: idx }) => {
+                    const hint = typeHints[idx] || mediaType;
+                    return (
+                        <View style={{ width: SCREEN_WIDTH - 32 }}>
+                            {isVideoUrl(url, hint)
+                                ? <VideoCell uri={url} />
+                                : <Image source={{ uri: url }} style={styles.postImage} resizeMode="cover" />}
+                        </View>
+                    );
+                }}
+            />
+            <View style={styles.slideCounter}>
+                <Text style={styles.slideCounterText}>
+                    {activeIndex + 1} / {allUrls.length}
+                </Text>
+            </View>
+            <View style={styles.dotsRow}>
+                {allUrls.map((_, i) => (
+                    <View
+                        key={i}
+                        style={[
+                            styles.dot,
+                            i === activeIndex ? styles.dotActive : styles.dotInactive,
+                        ]}
+                    />
+                ))}
+            </View>
+        </View>
+    );
+}
+
+function DetailMediaRenderer({ post }: { post?: any }) {
+    const allUrls: string[] = [];
+    const addUrl = (u?: string | null) => {
+        if (!u) return;
+        const resolved = resolveImageUrl(u);
+        if (resolved && !allUrls.includes(resolved)) {
+            allUrls.push(resolved);
+        }
+    };
+
+    if (post?.mediaUrls?.length) {
+        post.mediaUrls.forEach(addUrl);
+    }
+    if (post?.videoUrls?.length) {
+        post.videoUrls.forEach(addUrl);
+    }
+    addUrl(post?.mediaUrl);
+    addUrl(post?.imageUrl);
+    addUrl(post?.videoUrl);
+
+    const typeHints = post?.mediaTypes || [];
+
+    if (allUrls.length === 0) return null;
+
+    if (allUrls.length === 1) {
+        const url = allUrls[0];
+        const hint = typeHints[0] || post?.mediaType;
+        if (isVideoUrl(url, hint)) {
+            return <VideoCell uri={url} />;
+        }
+        return (
+            <View style={styles.mediaContainer}>
+                <Image source={{ uri: url }} style={styles.postImage} resizeMode="cover" />
+            </View>
+        );
+    }
+
+    return <MediaCarousel allUrls={allUrls} typeHints={typeHints} mediaType={post?.mediaType} />;
 }
 
 export default function PostDetailScreen() {
@@ -63,15 +239,9 @@ export default function PostDetailScreen() {
                     setIsFollowing(postAuthor.isFollowing);
                 }
 
-                // Load comments
+                // Load comments from the dedicated endpoint (always returns an array)
                 const commentsRes = await postService.getPostComments(postId);
-                if (Array.isArray(commentsRes)) {
-                    setCommentsList(commentsRes);
-                } else if (Array.isArray(commentsRes?.comments)) {
-                    setCommentsList(commentsRes.comments);
-                } else if (Array.isArray(data?.comments)) {
-                    setCommentsList(data.comments);
-                }
+                setCommentsList(commentsRes);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -223,27 +393,11 @@ export default function PostDetailScreen() {
                                     </Text>
                                 </TouchableOpacity>
                             </View>
-
                             {caption ? (
                                 <Text style={styles.postCaption}>{caption}</Text>
                             ) : null}
 
-                            {mediaUri && (
-                                <View style={styles.mediaContainer}>
-                                    <Image
-                                        source={{ uri: mediaUri }}
-                                        style={styles.postImage}
-                                        resizeMode="cover"
-                                    />
-                                    <TouchableOpacity style={styles.muteBtn}>
-                                        <Ionicons
-                                            name="volume-mute"
-                                            size={18}
-                                            color="#FFF"
-                                        />
-                                    </TouchableOpacity>
-                                </View>
-                            )}
+                            <DetailMediaRenderer post={post} />
 
                             {/* Actions */}
                             <View style={styles.postActions}>
@@ -591,5 +745,89 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    // Video & Carousel Styles
+    detailVideoContainer: {
+        width: '100%',
+        height: 380,
+        borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        position: 'relative',
+        marginBottom: 16,
+    },
+    detailVideoPlayer: { width: '100%', height: '100%' },
+    detailVideoOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    playBtnCircle: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    muteBtnCircle: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    videoBadge: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    carouselWrapper: {
+        position: 'relative',
+        marginBottom: 16,
+    },
+    slideCounter: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.52)',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+    },
+    slideCounterText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+    dotsRow: {
+        position: 'absolute',
+        bottom: 10,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+    },
+    dot: {
+        height: 6,
+        borderRadius: 3,
+    },
+    dotActive: {
+        width: 20,
+        backgroundColor: '#FFF',
+    },
+    dotInactive: {
+        width: 6,
+        backgroundColor: 'rgba(255,255,255,0.45)',
     },
 });

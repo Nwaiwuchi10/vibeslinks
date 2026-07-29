@@ -25,7 +25,8 @@ const STORIES = [
 
 export default function MessagesListScreen() {
     const [showFilter, setShowFilter] = useState(false);
-    const threads = useAppSelector((state) => state.chat.threads);
+    const rawThreads = useAppSelector((state) => state.chat?.threads);
+    const threads: any[] = Array.isArray(rawThreads) ? rawThreads : [];
     const [loading, setLoading] = useState(true);
 
     useFocusEffect(
@@ -110,7 +111,13 @@ export default function MessagesListScreen() {
                                 key={story.id} 
                                 style={styles.storyItem}
                                 activeOpacity={0.8}
-                                onPress={() => router.push(story.isAdd ? '/add-story' : '/view-story')}
+                                onPress={() => {
+                                    if (story.isAdd) {
+                                        router.push({ pathname: '/create-post', params: { defaultType: 'story' } });
+                                    } else {
+                                        router.push('/view-story');
+                                    }
+                                }}
                             >
                                 <View style={styles.storyImageContainer}>
                                     <Image source={{ uri: story.image }} style={styles.storyImage} />

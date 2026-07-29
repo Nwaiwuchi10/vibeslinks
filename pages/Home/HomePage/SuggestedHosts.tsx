@@ -7,12 +7,10 @@ import { homeService } from '@/services/homeService';
 import { eventService } from '@/services/eventService';
 import { resolveImageUrl } from '@/services/apiClient';
 
-const MOCK_SUGGESTED_HOSTS = [
-  { id: '1', name: 'Davido', tag: 'Afrobeats', followers: '2.3M', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&fit=crop&q=80', image: null },
-  { id: '2', name: 'Odumodublv', tag: 'EDM', followers: '1.8M', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&fit=crop&q=80', image: null },
-];
+import { useAppSelector } from '@/store/hooks';
 
 const SuggestedHosts = () => {
+  const currentUser = useAppSelector((state) => state.auth?.user);
   const [hosts, setHosts] = useState<any[]>([]);
 
   useEffect(() => {
@@ -20,35 +18,56 @@ const SuggestedHosts = () => {
       try {
         let data = await homeService.getSuggestedHosts();
         if (!Array.isArray(data) || data.length === 0) {
+          data = await homeService.getAllHosts();
+        }
+        if (!Array.isArray(data) || data.length === 0) {
           const res = await eventService.getArtistOptions();
           data = Array.isArray(res) ? res : res?.artists || [];
         }
-        if (Array.isArray(data) && data.length > 0) {
-          setHosts(data);
+        
+        let allHostsList = Array.isArray(data) ? [...data] : [];
+        if (currentUser) {
+          const currentUserId = currentUser.id || (currentUser as any)._id;
+          allHostsList = allHostsList.filter((h) => (h.id || h._id) !== currentUserId);
+          allHostsList.unshift(currentUser);
+        }
+        if (allHostsList.length > 0) {
+          setHosts(allHostsList);
         }
       } catch (err) {
         console.log('[SuggestedHosts] Error loading hosts:', err);
       }
     };
     fetchHosts();
-  }, []);
+  }, [currentUser]);
 
-  const displayHosts = hosts.length > 0
-    ? hosts.map((h: any) => ({
-        id: h.id || String(Math.random()),
-        name: h.name || h.fullName || h.username || 'Creator',
-        tag: h.interests?.[0] || h.category || h.genre || 'Music',
-        followers: h.followerCount != null
-          ? h.followerCount >= 1_000_000
-            ? `${(h.followerCount / 1_000_000).toFixed(1)}M`
-            : h.followerCount >= 1_000
-            ? `${(h.followerCount / 1_000).toFixed(1)}K`
-            : String(h.followerCount)
-          : '',
-        avatar: resolveImageUrl(h.profilePictureUrl || h.avatarUrl || null) || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
-        image: null,
-      }))
-    : MOCK_SUGGESTED_HOSTS;
+  if (hosts.length === 0) {
+    return null;
+  }
+
+  const displayHosts = hosts.map((h: any) => ({
+    id: h.id || (h as any)._id || String(Math.random()),
+    name: h.name ? `${h.firstName || ''} ${h.lastName || ''}`.trim() || h.name : h.fullName || h.username || 'Host',
+    tag: h.category || h.interests?.[0] || h.genre || 'Host',
+    followers: h.followerCount != null || h.followers != null
+      ? (h.followerCount || h.followers) >= 1_000_000
+        ? `${((h.followerCount || h.followers) / 1_000_000).toFixed(1)}M`
+        : (h.followerCount || h.followers) >= 1_000
+        ? `${((h.followerCount || h.followers) / 1_000).toFixed(1)}K`
+        : String(h.followerCount || h.followers)
+      : '',
+    avatar: resolveImageUrl(
+      h.profilePictureUrl ||
+      h.avatarUrl ||
+      h.profilePicture ||
+      h.avatar ||
+      h.picture ||
+      h.imageUrl ||
+      h.image ||
+      null
+    ),
+    image: null,
+  }));
 
   return (
     <View style={styles.container}>
@@ -67,11 +86,11 @@ const SuggestedHosts = () => {
             onPress={() => router.push({ pathname: '/profile', params: { id: host.id } })}
           >
             {host.avatar ? (
-              <Image source={{ uri: host.avatar }} style={styles.hostImage} />
-            ) : host.image ? (
-              <Image source={host.image} style={styles.hostImage} />
+              <Image source={{ uri: host.avatar }} style={styles.hostImage} resizeMode="cover" />
             ) : (
-              <View style={[styles.hostImage, styles.hostImagePlaceholder]} />
+              <View style={[styles.hostImage, styles.hostImagePlaceholder]}>
+                <Ionicons name="person" size={36} color="#888" />
+              </View>
             )}
             <View style={styles.hostInfo}>
               <Text style={styles.hostName} numberOfLines={1}>
@@ -119,7 +138,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hostImagePlaceholder: {
-    backgroundColor: '#DDD',
+    backgroundColor: '#EAEAEA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   hostInfo: {
     paddingHorizontal: 4,

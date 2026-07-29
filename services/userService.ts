@@ -119,17 +119,7 @@ export const userService = {
   },
 
   async followArtist(artistId: string) {
-    try {
-      // Try standard NestJS follow paths
-      return (await apiClient.post(`/users/${artistId}/follow`)).data;
-    } catch (err) {
-      try {
-        return (await apiClient.post('/users/follow', { artistId })).data;
-      } catch (nestedErr) {
-        console.warn('[userService] Follow artist endpoints not fully registered, simulated success.', nestedErr);
-        return { success: true };
-      }
-    }
+    return (await apiClient.patch(`/users/${artistId}/follow`)).data;
   },
 
 
@@ -153,10 +143,21 @@ export const userService = {
     // Sync local Redux state with updated user details
     const currentUser = store.getState().auth.user || {};
     const updatedUser = response.data?.user || response.data || {};
+    
+    const userToSave = { ...currentUser, ...profileData, ...updatedUser };
+    
+    // Prevent local file schemes from overriding resolved remote backend URLs
+    if (userToSave.profilePictureUrl?.startsWith('file://') || userToSave.profilePictureUrl?.startsWith('ph://') || userToSave.profilePictureUrl?.startsWith('content://')) {
+      userToSave.profilePictureUrl = updatedUser.profilePictureUrl || currentUser.profilePictureUrl;
+    }
+    if (userToSave.avatarUrl?.startsWith('file://') || userToSave.avatarUrl?.startsWith('ph://') || userToSave.avatarUrl?.startsWith('content://')) {
+      userToSave.avatarUrl = updatedUser.avatarUrl || updatedUser.profilePictureUrl || currentUser.avatarUrl;
+    }
+
     store.dispatch(
       setCredentials({
         token: store.getState().auth.token || '',
-        user: { ...currentUser, ...updatedUser, ...profileData }, // merge current state, backend response, and request data
+        user: userToSave,
       })
     );
     return response.data;
@@ -237,6 +238,25 @@ export const userService = {
     const response = await apiClient.post('/users/me/profile-picture', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    
+    // Update user state in Redux with new profile picture
+    const newPicUrl = response.data?.profilePictureUrl || response.data?.user?.profilePictureUrl || response.data?.url;
+    if (newPicUrl) {
+      const state = store.getState();
+      if (state.auth?.user) {
+        store.dispatch(
+          setCredentials({
+            token: state.auth.token!,
+            user: {
+              ...state.auth.user,
+              profilePictureUrl: newPicUrl,
+              avatarUrl: newPicUrl,
+            },
+          })
+        );
+      }
+    }
+    store.dispatch(showToast({ type: 'success', message: 'Profile picture updated successfully!' }));
     return response.data;
   },
 
@@ -259,13 +279,13 @@ export const userService = {
   },
 
   async followUser(id: string) {
-    const response = await apiClient.post(`/users/${id}/follow`);
+    const response = await apiClient.patch(`/users/${id}/follow`);
     store.dispatch(showToast({ type: 'success', message: 'User followed successfully.' }));
     return response.data;
   },
 
   async unfollowUser(id: string) {
-    const response = await apiClient.delete(`/users/${id}/follow`);
+    const response = await apiClient.patch(`/users/${id}/unfollow`);
     store.dispatch(showToast({ type: 'success', message: 'User unfollowed successfully.' }));
     return response.data;
   },

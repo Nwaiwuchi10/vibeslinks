@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  SafeAreaView,
-  Dimensions,
-  ActivityIndicator,
-} from 'react-native';
+import { homeService } from '@/services/homeService';
+import { liveStreamService } from '@/services/liveStreamService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { liveStreamService } from '@/services/liveStreamService';
-import { homeService } from '@/services/homeService';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -86,7 +86,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
           >
             {QUICK_ACTIONS.map((action) => (
               <View key={action.id} style={styles.actionItem}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.actionCircle, { backgroundColor: action.color }]}
                   onPress={() => {
                     if (action.id === '1') router.push('/go-live');
@@ -94,7 +94,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
                     else if (action.id === '3') router.push('/radio');
                     else if (action.id === '4') router.push('/watch-stream');
                     else if (action.id === '5') router.push('/create-post');
-                    else if (action.id === '6') router.push('/add-story');
+                    else if (action.id === '6') router.push({ pathname: '/create-post', params: { defaultType: 'story' } });
                   }}
                 >
                   <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
@@ -110,9 +110,9 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
           style={styles.adBanner}
           onPress={() => advert?.id && router.push({ pathname: '/event-details', params: { id: advert.id } })}
         >
-          <Image 
-            source={{ uri: advert?.imageUrl || advert?.image || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }} 
-            style={styles.adImage} 
+          <Image
+            source={{ uri: advert?.imageUrl || advert?.image || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }}
+            style={styles.adImage}
           />
           <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']} style={styles.adOverlay}>
             <View style={styles.adHeader}>
@@ -121,7 +121,7 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
             </View>
             <View style={styles.adFooter}>
               <Text style={styles.adTitle}>{advert?.title || 'Worship De King'} <Ionicons name="arrow-forward-circle" size={16} /></Text>
-              <Text style={styles.adPrice}>{advert?.price ? `₦${Number(advert.price).toLocaleString()}` : '₦15,000'}</Text>
+
             </View>
           </LinearGradient>
         </TouchableOpacity>

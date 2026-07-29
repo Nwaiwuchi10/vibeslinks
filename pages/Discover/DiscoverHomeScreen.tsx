@@ -1,25 +1,32 @@
+import { eventService } from '@/services/eventService';
+import { homeService } from '@/services/homeService';
+import { liveStreamService } from '@/services/liveStreamService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   Image,
-  SafeAreaView,
+  Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
-import { router } from 'expo-router';
-import { eventService } from '@/services/eventService';
-import { liveStreamService } from '@/services/liveStreamService';
-import { homeService } from '@/services/homeService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
 const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSearchPress: () => void, onFilterPress: () => void, onAiPress: () => void }) => {
+  const insets = useSafeAreaInsets();
+  // On Android, StatusBar.currentHeight is the most reliable value for status bar height
+  const statusBarHeight = Platform.OS === 'android'
+    ? (StatusBar.currentHeight ?? insets.top ?? 24)
+    : insets.top;
   const [categories, setCategories] = useState<any[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [advert, setAdvert] = useState<any>(null);
@@ -80,7 +87,7 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
     : events.filter((e: any) => (e.category || '').toLowerCase() === activeCategory.toLowerCase());
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: statusBarHeight }]}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.searchBar} onPress={onSearchPress}>
           <Ionicons name="search-outline" size={20} color="#666" />
@@ -230,7 +237,7 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
           <View style={{ height: 100 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 

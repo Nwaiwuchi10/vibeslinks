@@ -15,12 +15,14 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { useAppSelector } from '@/store/hooks';
 import { postService } from '@/services/postService';
+import { storyService } from '@/services/storyService';
 
+type PostType = 'post' | 'story';
 type Visibility = 'public' | 'followers-only' | 'private';
 
 const VISIBILITY_OPTIONS: { label: string; value: Visibility; icon: string; desc: string }[] = [
@@ -30,7 +32,9 @@ const VISIBILITY_OPTIONS: { label: string; value: Visibility; icon: string; desc
 ];
 
 export default function CreatePostScreen() {
+    const params = useLocalSearchParams<{ defaultType?: 'post' | 'story' }>();
     const authUser = useAppSelector((state) => state.auth.user);
+    const [postType, setPostType] = useState<PostType>(params.defaultType || 'post');
     const [content, setContent] = useState('');
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [visibility, setVisibility] = useState<Visibility>('public');
@@ -77,14 +81,24 @@ export default function CreatePostScreen() {
         }
         setSubmitting(true);
         try {
-            await postService.createPost({
-                content: content.trim(),
-                imageUri: selectedImage ?? undefined,
-                visibility,
-            });
+            if (postType === 'story') {
+                const isLocalFile = selectedImage ? !selectedImage.startsWith('http') : false;
+                await storyService.createStory({
+                    imageUri: isLocalFile ? selectedImage! : undefined,
+                    mediaUrl: !isLocalFile ? selectedImage || undefined : undefined,
+                    caption: content.trim() || undefined,
+                    visibility,
+                });
+            } else {
+                await postService.createPost({
+                    content: content.trim(),
+                    imageUri: selectedImage ?? undefined,
+                    visibility,
+                });
+            }
             router.back();
         } catch (err: any) {
-            console.error('[CreatePostScreen] Error creating post:', err);
+            console.error('[CreatePostScreen] Error creating:', err);
         } finally {
             setSubmitting(false);
         }
@@ -102,7 +116,27 @@ export default function CreatePostScreen() {
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()}>
                     <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Create Post</Text>
+
+                {/* Segment Selector: Feed Post vs 24h Story */}
+                <View style={styles.typeSegment}>
+                    <TouchableOpacity
+                        style={[styles.segmentBtn, postType === 'post' && styles.segmentBtnActive]}
+                        onPress={() => setPostType('post')}
+                    >
+                        <Text style={[styles.segmentText, postType === 'post' && styles.segmentTextActive]}>
+                            Post
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.segmentBtn, postType === 'story' && styles.segmentBtnActive]}
+                        onPress={() => setPostType('story')}
+                    >
+                        <Text style={[styles.segmentText, postType === 'story' && styles.segmentTextActive]}>
+                            Story
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
                 <TouchableOpacity
                     style={[styles.postBtn, submitting && { opacity: 0.6 }]}
                     onPress={handleSubmit}
@@ -117,7 +151,7 @@ export default function CreatePostScreen() {
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                         >
-                            <Text style={styles.postBtnText}>Post</Text>
+                            <Text style={styles.postBtnText}>{postType === 'story' ? 'Share' : 'Post'}</Text>
                         </LinearGradient>
                     )}
                 </TouchableOpacity>
@@ -304,6 +338,33 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFF',
         borderBottomWidth: 1,
         borderBottomColor: '#EFEFEF',
+    },
+    typeSegment: {
+        flexDirection: 'row',
+        backgroundColor: '#F0F0F5',
+        borderRadius: 20,
+        padding: 3,
+    },
+    segmentBtn: {
+        paddingVertical: 6,
+        paddingHorizontal: 16,
+        borderRadius: 17,
+    },
+    segmentBtnActive: {
+        backgroundColor: '#FFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    segmentText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#888',
+    },
+    segmentTextActive: {
+        color: Colors.primary,
     },
     cancelBtn: {
         paddingVertical: 6,

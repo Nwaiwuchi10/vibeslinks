@@ -17,15 +17,18 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { storyService } from '@/services/storyService';
 
+import { resolveImageUrl } from '@/services/apiClient';
+
 const { width, height } = Dimensions.get('window');
-const STORY_DURATION = 5000; // 5 seconds per story
+const STORY_DURATION = 5000; // 5 seconds per story slide
 
 export default function ViewStoryScreen() {
-    const params = useLocalSearchParams<{ id?: string }>();
+    const params = useLocalSearchParams<{ id?: string; storiesData?: string }>();
     const storyId = params.id;
 
-    const [story, setStory] = useState<any>(null);
-    const [loading, setLoading] = useState(!!storyId);
+    const [stories, setStories] = useState<any[]>([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [loading, setLoading] = useState(true);
     const [showOptions, setShowOptions] = useState(false);
     const [replyText, setReplyText] = useState('');
 
@@ -33,21 +36,59 @@ export default function ViewStoryScreen() {
     const progressAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        if (!storyId) {
-            setLoading(false);
-            return;
-        }
-        storyService.getStoryById(storyId).then((data) => {
-            setStory(data);
-            setLoading(false);
-            // Mark as viewed after loading
-            storyService.markStoryViewed(storyId);
-        });
-    }, [storyId]);
+        const initStories = async () => {
+            setLoading(true);
+            let storyList: any[] = [];
+            
+            if (params.storiesData) {
+                try {
+                    storyList = JSON.parse(params.storiesData);
+                } catch (e) {
+                    console.error('Error parsing storiesData param', e);
+                }
+            }
 
-    // Start progress bar when story loads
+            if (storyList.length === 0 && storyId) {
+                try {
+                    const data = await storyService.getStoryById(storyId);
+                    if (data) storyList = [data];
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+
+            // Sort stories from newest to oldest
+            storyList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+            if (storyList.length === 0) {
+                // Fallback default
+                storyList = [{
+                    id: 'default',
+                    mediaUrl: 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=600',
+                    caption: '',
+                }];
+            }
+
+            setStories(storyList);
+            setCurrentIndex(0);
+            setLoading(false);
+        };
+
+        initStories();
+    }, [storyId, params.storiesData]);
+
+    const currentStory = stories[currentIndex] || {};
+
+    // Mark current story as viewed
     useEffect(() => {
-        if (!loading && story) {
+        if (currentStory?.id && currentStory.id !== 'default') {
+            storyService.markStoryViewed(currentStory.id);
+        }
+    }, [currentIndex, currentStory]);
+
+    // Handle slide animation and auto-advancing
+    useEffect(() => {
+        if (!loading && stories.length > 0 && !showOptions) {
             progressAnim.setValue(0);
             const anim = Animated.timing(progressAnim, {
                 toValue: 1,
@@ -55,28 +96,37 @@ export default function ViewStoryScreen() {
                 useNativeDriver: false,
             });
             anim.start(({ finished }) => {
-                if (finished) router.back();
+                if (finished) {
+                    if (currentIndex < stories.length - 1) {
+                        setCurrentIndex(prev => prev + 1);
+                    } else {
+                        router.back();
+                    }
+                }
             });
             return () => anim.stop();
         }
-    }, [loading, story]);
+    }, [loading, currentIndex, stories.length, showOptions]);
 
-    const author = story?.author || story?.user || story?.creator || {};
-    const avatarUri =
-        author?.profilePictureUrl ||
-        author?.avatarUrl ||
-        `https://i.pravatar.cc/150?img=11`;
+    const handleNextSlide = () => {
+        if (currentIndex < stories.length - 1) {
+            setCurrentIndex(prev => prev + 1);
+        } else {
+            router.back();
+        }
+    };
+
+    const handlePrevSlide = () => {
+        if (currentIndex > 0) {
+            setCurrentIndex(prev => prev - 1);
+        }
+    };
+
+    const author = currentStory?.author || currentStory?.user || currentStory?.creator || {};
+    const avatarUri = resolveImageUrl(author?.profilePictureUrl || author?.avatarUrl || null) || `https://i.pravatar.cc/150?img=11`;
     const username = author?.username || author?.name || 'User';
-    const mediaUri =
-        story?.mediaUrl ||
-        story?.imageUrl ||
-        'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=600';
-    const caption = story?.caption || story?.text || '';
-
-    const progressWidth = progressAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-    });
+    const mediaUri = resolveImageUrl(currentStory?.mediaUrl || currentStory?.imageUrl || null) || 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=600';
+    const caption = currentStory?.caption || currentStory?.text || '';
 
     return (
         <View style={styles.container}>
@@ -96,14 +146,36 @@ export default function ViewStoryScreen() {
                     {/* Dark overlay */}
                     <View style={styles.overlay} />
 
-                    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-                        {/* Progress Bar */}
+                    {/* Tap overlay for slide navigation */}
+                    <View style={styles.touchOverlay} pointerEvents="box-none">
+                        <TouchableOpacity style={styles.touchLeft} onPress={handlePrevSlide} activeOpacity={1} />
+                        <TouchableOpacity style={styles.touchRight} onPress={handleNextSlide} activeOpacity={1} />
+                    </View>
+
+                    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']} pointerEvents="box-none">
+                        {/* Multi-segment Progress Bar */}
                         <View style={styles.progressBarContainer}>
-                            <View style={styles.progressBarTrack}>
-                                <Animated.View
-                                    style={[styles.progressBarFill, { width: progressWidth }]}
-                                />
-                            </View>
+                            {stories.map((_, idx) => {
+                                let widthInterpolation;
+                                if (idx < currentIndex) {
+                                    widthInterpolation = '100%';
+                                } else if (idx === currentIndex) {
+                                    widthInterpolation = progressAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: ['0%', '100%'],
+                                    });
+                                } else {
+                                    widthInterpolation = '0%';
+                                }
+
+                                return (
+                                    <View key={idx} style={styles.progressBarTrack}>
+                                        <Animated.View
+                                            style={[styles.progressBarFill, { width: widthInterpolation }]}
+                                        />
+                                    </View>
+                                );
+                            })}
                         </View>
 
                         {/* Header */}
@@ -213,15 +285,28 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.18)',
     },
-    safeArea: {
+    touchOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        flexDirection: 'row',
+        zIndex: 5,
+    },
+    touchLeft: {
         flex: 1,
+        height: '100%',
+    },
+    touchRight: {
+        flex: 2,
+        height: '100%',
     },
     progressBarContainer: {
+        flexDirection: 'row',
+        gap: 4,
         paddingHorizontal: 12,
         paddingTop: Platform.OS === 'android' ? 8 : 0,
         marginBottom: 10,
     },
     progressBarTrack: {
+        flex: 1,
         height: 3,
         backgroundColor: 'rgba(255,255,255,0.35)',
         borderRadius: 2,

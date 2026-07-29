@@ -86,8 +86,11 @@ export default function EditProfileMain() {
         
         // Dynamic upload profile picture using POST /users/me/profile-picture
         try {
-          await userService.uploadProfilePicture(pickedUri);
-          dispatch(showToast({ type: 'success', message: 'Profile picture uploaded successfully!' }));
+          const res = await userService.uploadProfilePicture(pickedUri);
+          const newUrl = res?.profilePictureUrl || res?.user?.profilePictureUrl || res?.url;
+          if (newUrl) {
+            setAvatarUrl(newUrl);
+          }
         } catch (uploadErr) {
           console.warn('[EditProfile] Profile picture upload failed, will save in profile update:', uploadErr);
         }

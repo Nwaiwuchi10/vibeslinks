@@ -46,10 +46,12 @@ const StoriesSection = ({ refreshKey }: { refreshKey?: number }) => {
 
     // Map story groups / stories to a unified shape for display
     const mappedStories = storyGroups.map((group: any) => {
-        // Group may have { user, stories: [{id, mediaUrl, ...}] }
-        // or flat { id, mediaUrl, author/user/creator, ... }
         if (group.user && Array.isArray(group.stories)) {
-            const first = group.stories[0];
+            // Sort user's stories from newest to oldest
+            const sorted = [...group.stories].sort(
+                (a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+            );
+            const first = sorted[0];
             const name = group.user.username || group.user.name || 'User';
             const initials = name
                 ? name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -57,8 +59,18 @@ const StoriesSection = ({ refreshKey }: { refreshKey?: number }) => {
             return {
                 id: group.user.id || first?.id || String(Math.random()),
                 storyId: first?.id || null,
+                stories: sorted,
                 name: name,
-                avatar: resolveImageUrl(group.user.profilePictureUrl || group.user.avatarUrl || null),
+                avatar: resolveImageUrl(
+                    group.user.profilePictureUrl ||
+                    group.user.avatarUrl ||
+                    group.user.profilePicture ||
+                    group.user.avatar ||
+                    group.user.picture ||
+                    group.user.imageUrl ||
+                    group.user.image ||
+                    null
+                ),
                 initials,
                 isLive: false,
                 hasPlus: false,
@@ -73,8 +85,18 @@ const StoriesSection = ({ refreshKey }: { refreshKey?: number }) => {
         return {
             id: group.id || String(Math.random()),
             storyId: group.id || null,
+            stories: [group],
             name: name,
-            avatar: resolveImageUrl(user.profilePictureUrl || user.avatarUrl || null),
+            avatar: resolveImageUrl(
+                user.profilePictureUrl ||
+                user.avatarUrl ||
+                user.profilePicture ||
+                user.avatar ||
+                user.picture ||
+                user.imageUrl ||
+                user.image ||
+                null
+            ),
             initials,
             isLive: false,
             hasPlus: false,
@@ -96,7 +118,12 @@ const StoriesSection = ({ refreshKey }: { refreshKey?: number }) => {
                     activeOpacity={0.8}
                     onPress={() => {
                         if (story.hasPlus) {
-                            router.push('/add-story');
+                            router.push({ pathname: '/create-post', params: { defaultType: 'story' } });
+                        } else if (story.stories && story.stories.length > 0) {
+                            router.push({
+                                pathname: '/view-story',
+                                params: { storiesData: JSON.stringify(story.stories) },
+                            });
                         } else if (story.storyId) {
                             router.push({
                                 pathname: '/view-story',

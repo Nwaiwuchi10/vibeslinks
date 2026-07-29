@@ -17,7 +17,7 @@ import { RootState } from '@/store';
 export default function ETicketScreen() {
     const lastPurchase = useSelector((state: RootState) => state.event.lastPurchase);
 
-    if (!lastPurchase || !lastPurchase.ticket) {
+    if (!lastPurchase) {
         return (
             <SafeAreaView style={styles.safeArea} edges={['top']}>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -30,10 +30,15 @@ export default function ETicketScreen() {
         );
     }
 
-    const { ticket } = lastPurchase;
-    const { event, attendee, ticketTypes } = ticket;
+    // Backend may return data under 'ticket' or 'receipt' depending on the endpoint
+    const ticketData = lastPurchase?.ticket || lastPurchase?.receipt || lastPurchase || {};
+    const event = ticketData?.event || {};
+    const attendee = ticketData?.attendee || {};
+    const ticketTypes: any[] = ticketData?.ticketTypes || ticketData?.items || [];
 
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(ticket.qrCodeValue || 'vibezlink://ticket')}`;
+    const qrCodeValue = ticketData?.qrCodeValue || lastPurchase?.qrCodeValue || 'vibezlink://ticket';
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrCodeValue)}`;
+
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -54,7 +59,7 @@ export default function ETicketScreen() {
                 {/* Event Banner */}
                 <View style={styles.bannerCard}>
                     <Image
-                        source={event.imageUrl ? { uri: event.imageUrl } : { uri: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600' }}
+                    source={event?.imageUrl ? { uri: event.imageUrl } : { uri: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600' }}
                         style={styles.bannerImage}
                         resizeMode="cover"
                     />
@@ -66,15 +71,15 @@ export default function ETicketScreen() {
                 <View style={styles.infoSection}>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Full Name</Text>
-                        <Text style={styles.infoValue}>{attendee.fullName}</Text>
+                        <Text style={styles.infoValue}>{attendee?.fullName || 'N/A'}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Event Name</Text>
-                        <Text style={styles.infoValue}>{event.title}</Text>
+                        <Text style={styles.infoValue}>{event?.title || 'N/A'}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Event Date and Time</Text>
-                        <Text style={styles.infoValue}>{event.dateTimeText}</Text>
+                        <Text style={styles.infoValue}>{event?.dateTimeText || 'N/A'}</Text>
                     </View>
                 </View>
 

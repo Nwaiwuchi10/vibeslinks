@@ -11,6 +11,7 @@ import { store } from '@/store';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { restoredCredentials } from '@/store/slices/authSlice';
 import { socketService } from '@/services/socketService';
+import { Audio } from 'expo-av';
 import ToastContainer from '@/components/ui/Toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -21,6 +22,16 @@ function AppContent() {
   const colorScheme = useColorScheme();
   const dispatch = useAppDispatch();
   const { token, isAuthenticated, user } = useAppSelector((state) => state.auth);
+
+  // Configure audio mode for iOS silent switch bypass & background audio support
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      allowsRecordingIOS: false,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    }).catch((err) => console.warn('[RootLayout] Error configuring Audio mode:', err));
+  }, []);
 
   // Restore session token on app launch
   useEffect(() => {

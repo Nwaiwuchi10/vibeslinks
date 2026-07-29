@@ -19,6 +19,7 @@ import { setLastPurchase } from '@/store/slices/eventSlice';
 import { stripeService } from '@/services/stripeService';
 import { eventService } from '@/services/eventService';
 import StripeWebViewModal from '@/components/StripeWebViewModal';
+import StripeCheckoutModal from '@/components/StripeCheckoutModal';
 
 export default function TicketSummaryScreen() {
     const { id, paymentMethod: pmParam, paymentMethodId: pmIdParam } = useLocalSearchParams<{ id?: string; paymentMethod?: string; paymentMethodId?: string }>();
@@ -33,6 +34,10 @@ export default function TicketSummaryScreen() {
     const [stripePublishableKey, setStripePublishableKey] = useState('');
     const [stripeClientSecret, setStripeClientSecret] = useState('');
     const [stripePaymentIntentId, setStripePaymentIntentId] = useState('');
+
+    // Stripe Checkout state
+    const [stripeCheckoutVisible, setStripeCheckoutVisible] = useState(false);
+    const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
 
     const bookingInfo = useSelector((state: RootState) => state.event.bookingInfo);
     const event = useSelector((state: RootState) => state.event.currentEvent);
@@ -86,42 +91,22 @@ export default function TicketSummaryScreen() {
             const eventId = id || event.id;
 
             if (paymentMethod === 'stripe') {
-                // Step 1: Create Stripe PaymentIntent
-                const intentRes = await eventService.createStripeTicketIntent(eventId, {
-                    items: selectedTierIds.map(tierId => ({
-                        tierId,
-                        quantity: bookingInfo.selectedTiers[tierId],
-                    })),
-                    fullName: bookingInfo.buyer.fullName,
-                    email: bookingInfo.buyer.email,
-                    phoneNumber: bookingInfo.buyer.phoneNumber,
-                    country: bookingInfo.buyer.country || 'Nigeria',
-                    gender: bookingInfo.buyer.gender || 'Male',
+                const firstTierId = selectedTierIds[0];
+                const quantity = bookingInfo.selectedTiers[firstTierId] || 1;
+
+                const sessionRes = await stripeService.createCheckoutSession({
+                    purchaseType: 'event-ticket',
+                    eventId: eventId!,
+                    tierId: firstTierId,
+                    quantity: quantity,
                 });
 
-                const pubKey = intentRes?.payment?.publishableKey || intentRes?.publishableKey;
-                const secret = intentRes?.payment?.clientSecret || intentRes?.clientSecret;
-                const pIntentId = intentRes?.payment?.paymentIntentId || intentRes?.paymentIntentId;
-
-                if (pubKey && secret) {
-                    setStripePublishableKey(pubKey);
-                    setStripeClientSecret(secret);
-                    setStripePaymentIntentId(pIntentId || '');
+                if (sessionRes?.checkoutUrl) {
+                    setStripeCheckoutUrl(sessionRes.checkoutUrl);
                     setShowPayment(false);
-                    setStripeModalVisible(true);
+                    setStripeCheckoutVisible(true);
                 } else {
-                    // Fallback direct purchase if backend already confirmed
-                    const res = await eventService.purchaseTickets(eventId, {
-                        items: selectedTierIds.map(tierId => ({
-                            tierId,
-                            quantity: bookingInfo.selectedTiers[tierId],
-                        })),
-                        paymentMethod: 'stripe',
-                        paymentIntentId: pIntentId,
-                    });
-                    dispatch(setLastPurchase(res));
-                    setShowPayment(false);
-                    router.push('/booking-success');
+                    throw new Error('No checkout URL returned from Stripe Checkout Session creation.');
                 }
             } else {
                 // Wallet payment
@@ -138,6 +123,19 @@ export default function TicketSummaryScreen() {
             }
         } catch (err) {
             console.warn('[TicketSummaryScreen] Purchase failed:', err);
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    const handleStripeCheckoutSuccess = async (purchaseData: any) => {
+        setStripeCheckoutVisible(false);
+        setIsPaying(true);
+        try {
+            dispatch(setLastPurchase(purchaseData?.purchase || purchaseData));
+            router.push('/booking-success');
+        } catch (err) {
+            console.warn('[TicketSummaryScreen] Redirect to success failed:', err);
         } finally {
             setIsPaying(false);
         }
@@ -348,6 +346,15 @@ export default function TicketSummaryScreen() {
                 onClose={() => setStripeModalVisible(false)}
                 onSuccess={handleStripeSuccess}
                 onError={(err) => console.warn('[StripeWebView] Error:', err)}
+            />
+
+            {/* Stripe Checkout Session WebView Modal */}
+            <StripeCheckoutModal
+                visible={stripeCheckoutVisible}
+                checkoutUrl={stripeCheckoutUrl}
+                onClose={() => setStripeCheckoutVisible(false)}
+                onSuccess={handleStripeCheckoutSuccess}
+                onError={(err) => console.warn('[StripeCheckout] Error:', err)}
             />
         </SafeAreaView>
     );

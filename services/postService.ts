@@ -120,12 +120,22 @@ export const postService = {
   },
 
   // ─── Post Comments ───────────────────────────────────────────────────────────
-  async getPostComments(id: string) {
-    return (await apiClient.get(`/posts/${id}/comments`)).data;
+  async getPostComments(id: string): Promise<any[]> {
+    try {
+      const res = await apiClient.get(`/posts/${id}/comments`);
+      const d = res.data;
+      if (Array.isArray(d)) return d;
+      if (Array.isArray(d?.comments)) return d.comments;
+      if (Array.isArray(d?.items)) return d.items;
+      if (Array.isArray(d?.data)) return d.data;
+      return [];
+    } catch {
+      return [];
+    }
   },
 
-  async createPostComment(id: string, text: string) {
-    const response = await apiClient.post(`/posts/${id}/comments`, { text });
+  async createPostComment(id: string, message: string) {
+    const response = await apiClient.post(`/posts/${id}/comments`, { message });
     return response.data;
   },
 

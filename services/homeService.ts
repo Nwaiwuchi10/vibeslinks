@@ -45,12 +45,26 @@ export const homeService = {
     }
   },
 
-  /** GET /users/onboarding/options – suggested creators/hosts */
-  async getSuggestedHosts() {
+  /** GET /users/hosts/suggested – suggested hosts for current user */
+  async getSuggestedHosts(limit?: number) {
     try {
-      const res = await apiClient.get('/users/onboarding/options', { silent: true });
-      const data = res.data;
-      return data?.suggestedCreators || data?.artists || data?.suggestedHosts || data?.hosts || [];
+      const res = await apiClient.get('/users/hosts/suggested', {
+        params: limit ? { limit: String(limit) } : undefined,
+        silent: true,
+      });
+      const items = Array.isArray(res.data) ? res.data : res.data?.items || res.data?.hosts || [];
+      return items;
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /users/hosts – fetch all hosts */
+  async getAllHosts() {
+    try {
+      const res = await apiClient.get('/users/hosts', { silent: true });
+      const items = Array.isArray(res.data) ? res.data : res.data?.items || res.data?.hosts || [];
+      return items;
     } catch {
       return [];
     }

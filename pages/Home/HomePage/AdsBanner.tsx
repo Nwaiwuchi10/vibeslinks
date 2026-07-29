@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { ImageBackground, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { resolveImageUrl } from '@/services/apiClient';
+import { homeService } from '@/services/homeService';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { homeService } from '@/services/homeService';
-import { resolveImageUrl } from '@/services/apiClient';
+import React, { useEffect, useState } from 'react';
+import { ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const AdsBanner = ({ refreshKey }: { refreshKey?: number }) => {
   const [advert, setAdvert] = useState<any | null>(null);
@@ -60,7 +60,7 @@ const AdsBanner = ({ refreshKey }: { refreshKey?: number }) => {
               <Text style={styles.adTitle}>{title}</Text>
               <MaterialIcons name="verified" size={14} color="#FFF" style={{ marginLeft: 4 }} />
             </View>
-            {price ? <Text style={styles.adPrice}>{price}</Text> : null}
+
           </View>
         </View>
       </ImageBackground>

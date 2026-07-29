@@ -1,7 +1,9 @@
 import React from 'react';
 import {
+    Alert,
     Image,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -32,6 +34,43 @@ export default function EReceiptScreen() {
 
     const { receipt } = lastPurchase;
     const { event, attendee, items, summary } = receipt;
+
+    const handleDownload = async () => {
+        try {
+            const itemsText = items.map((item: any) => 
+                `• ${item.quantity}x ${item.tierName} Ticket (${item.currency || '₦'}${item.totalAmount.toLocaleString()})`
+            ).join('\n');
+
+            const receiptText = `
+VIBEZLINK E-RECEIPT
+=========================
+Event: ${event.title}
+Category: ${event.category || 'Event'}
+Date/Time: ${event.dateTimeText}
+Organizer: ${event.organizer || 'Vibez Nation'}
+-------------------------
+Attendee: ${attendee.fullName}
+Email: ${attendee.email}
+Phone: ${attendee.phoneNumber || 'N/A'}
+-------------------------
+Tickets purchased:
+${itemsText}
+-------------------------
+Total Paid: ${summary?.totalLabel}
+=========================
+Thank you for your purchase!
+Verify your entry using the QR code in the app.
+`;
+
+            await Share.share({
+                message: receiptText.trim(),
+                title: `${event.title} - E-Receipt`,
+            });
+        } catch (err) {
+            console.warn('[EReceiptScreen] Share failed:', err);
+            Alert.alert('Error', 'Unable to download or share the receipt.');
+        }
+    };
 
     // QR Server API requires url encoded value
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrCodeValue || 'vibezlink://ticket')}`;
@@ -126,7 +165,7 @@ export default function EReceiptScreen() {
 
             {/* Bottom Actions */}
             <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleDownload} activeOpacity={0.85}>
                     <Text style={styles.primaryBtnText}>Download E-Receipt</Text>
                 </TouchableOpacity>
                 <TouchableOpacity

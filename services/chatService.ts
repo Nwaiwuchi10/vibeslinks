@@ -5,7 +5,8 @@ import { setThreads, setMessages, updateThread, addMessage } from '@/store/slice
 export const chatService = {
   async getThreads(params?: { q?: string; type?: 'all' | 'direct' | 'host-event' | 'community'; eventId?: string }) {
     const response = await apiClient.get('/chats/threads', { params });
-    const items = response.data?.items || response.data || [];
+    const data = response.data;
+    const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
     store.dispatch(setThreads(items));
     return items;
   },

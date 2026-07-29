@@ -132,6 +132,15 @@ apiClient.interceptors.response.use(
 
 export const resolveImageUrl = (url?: string | null) => {
   if (!url) return null;
+  // Replace backend dev localhost/127.0.0.1 URLs with remote BASE_URL for Android device access
+  if (url.includes('localhost:') || url.includes('127.0.0.1:')) {
+    const relativePath = url.replace(/^https?:\/\/[^\/]+/, '');
+    return relativePath.startsWith('/') ? `${BASE_URL}${relativePath}` : `${BASE_URL}/${relativePath}`;
+  }
+  // Standardize http:// URLs to https:// if pointing to remote backend or Cloudinary
+  if (url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+    url = url.replace('http://', 'https://');
+  }
   if (
     url.startsWith('http://') ||
     url.startsWith('https://') ||

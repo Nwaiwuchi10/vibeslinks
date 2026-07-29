@@ -1,54 +1,85 @@
+import React, { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { resolveImageUrl } from '@/services/apiClient';
+import { eventService } from '@/services/eventService';
 
 interface VibingEvent {
   id?: string;
   title?: string;
   imageUrl?: string;
   eventPosterUrl?: string;
+  coverImageUrl?: string;
   location?: string;
   venue?: string;
   startsAt?: string;
   ticketTiers?: { price: number }[];
-  attendingFriends?: string[]; // avatar URLs of friends attending
+  attendingFriends?: string[];
+  attendees?: any[];
 }
 
 interface VibingEventPostProps {
   event?: VibingEvent | null;
+  refreshKey?: number;
 }
 
-const MOCK_EVENT: VibingEvent = {
-  id: 'mock',
-  title: 'Afro Summer Festival',
-  imageUrl: undefined,
-  location: 'Lekki Ikata, Lagos Nigeria',
-  startsAt: '2026-05-15T21:00:00Z',
-  ticketTiers: [{ price: 80000 }],
-  attendingFriends: [
-    'https://i.pravatar.cc/150?img=11',
-    'https://i.pravatar.cc/150?img=12',
-    'https://i.pravatar.cc/150?img=13',
-    'https://i.pravatar.cc/150?img=15',
-  ],
-};
+export default function VibingEventPost({ event, refreshKey }: VibingEventPostProps) {
+  const [fetchedEvent, setFetchedEvent] = useState<any>(null);
+  const [attendees, setAttendees] = useState<string[]>([]);
 
-export default function VibingEventPost({ event }: VibingEventPostProps) {
-  const e = event || MOCK_EVENT;
+  useEffect(() => {
+    let isMounted = true;
+    async function loadEventAndAttendees() {
+      try {
+        let currentEvent = event;
+        if (!currentEvent) {
+          const events = await eventService.getAllEvents();
+          if (events && events.length > 0) {
+            currentEvent = events[0];
+          }
+        }
 
-  const imageUri = e.imageUrl || e.eventPosterUrl;
+        if (currentEvent && isMounted) {
+          setFetchedEvent(currentEvent);
+          const eventId = currentEvent.id || (currentEvent as any)._id;
+          if (eventId) {
+            const atts = await eventService.getEventAttendees(eventId);
+            if (isMounted && atts && atts.length > 0) {
+              const avatarUrls = atts
+                .map((a: any) => resolveImageUrl(a.profilePictureUrl || a.avatarUrl || a.user?.profilePictureUrl || a.user?.avatarUrl || null))
+                .filter(Boolean);
+              if (avatarUrls.length > 0) {
+                setAttendees(avatarUrls);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[VibingEventPost] Error loading event & attendees:', err);
+      }
+    }
+
+    loadEventAndAttendees();
+    return () => { isMounted = false; };
+  }, [event, refreshKey]);
+
+  const e = fetchedEvent || event;
+  if (!e) return null;
+
+  const rawImage = e.imageUrl || e.eventPosterUrl || e.coverImageUrl || null;
+  const imageUri = resolveImageUrl(rawImage);
   const locationText = e.location || e.venue || 'Lagos, Nigeria';
   const price = e.ticketTiers?.[0]?.price
-    ? `₦${e.ticketTiers[0].price.toLocaleString()}`
-    : '₦80,000';
+    ? `₦${Number(e.ticketTiers[0].price).toLocaleString()}`
+    : e.price ? `₦${Number(e.price).toLocaleString()}` : '₦8,000';
   const dateText = e.startsAt
     ? new Date(e.startsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : 'May 15 - 9:00 PM';
-  const friends = e.attendingFriends?.length
-    ? e.attendingFriends
-    : ['https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12', 'https://i.pravatar.cc/150?img=13', 'https://i.pravatar.cc/150?img=15'];
+    : 'Upcoming Event';
+  const friends = attendees.length > 0
+    ? attendees
+    : (e.attendingFriends?.length ? e.attendingFriends : ['https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12', 'https://i.pravatar.cc/150?img=13']);
 
   return (
     <View style={styles.feedPostCard}>
@@ -56,7 +87,7 @@ export default function VibingEventPost({ event }: VibingEventPostProps) {
         <Text style={styles.feedBadgeText}>See where your friends are vibing</Text>
         <TouchableOpacity style={styles.vibingBadge} onPress={() => router.push('/friends-vibing')} activeOpacity={0.8}>
           <View style={styles.vibingStack}>
-            {friends.slice(0, 4).map((uri, i) => (
+            {friends.slice(0, 4).map((uri: string, i: number) => (
               <Image key={i} source={{ uri }} style={[styles.vibingAvatar, { marginLeft: i === 0 ? 0 : -10 }]} />
             ))}
           </View>

@@ -170,4 +170,28 @@ export const stripeService = {
     const response = await apiClient.get('/host-dashboard/wallet/stripe-connect/status');
     return response.data;
   },
+
+  /**
+   * Create a Stripe Checkout Session for event ticket or livestream.
+   * Returns { checkoutUrl }
+   */
+  async createCheckoutSession(data: {
+    purchaseType: 'event-ticket' | 'live-stream';
+    eventId: string;
+    tierId?: string;
+    quantity: number;
+  }) {
+    const response = await apiClient.post('/payments/checkout', data);
+    return response.data as { checkoutUrl: string };
+  },
+
+  /**
+   * Confirm/Verify Stripe Checkout Session.
+   */
+  async confirmCheckoutSession(sessionId: string) {
+    const response = await apiClient.get('/payments/checkout/complete', {
+      params: { session_id: sessionId }
+    });
+    return response.data;
+  },
 };
