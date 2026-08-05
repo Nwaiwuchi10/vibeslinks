@@ -18,18 +18,40 @@ import { chatService } from '@/services/chatService';
 import { socketService } from '@/services/socketService';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
+import UserAvatar from '@/components/UserAvatar';
+import { resolveImageUrl } from '@/services/apiClient';
+
 export default function ChatDetailScreen() {
     const params = useLocalSearchParams<{ id: string, name: string, image: string }>();
     const dispatch = useAppDispatch();
     const [message, setMessage] = useState('');
 
     const conversationId = params.id || 'mock-conversation-id';
-    const chatName = params.name || 'Roland Emmanuel';
-    const chatImage = params.image || 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150';
 
     const currentUser = useAppSelector((state) => state.auth.user);
-    const currentUserId = currentUser?.id || 'current-user-id';
+    const currentUserId = currentUser?.id || currentUser?._id || 'current-user-id';
     const liveMessages = useAppSelector((state) => state.chat.messages[conversationId] || []);
+    const threads = useAppSelector((state) => state.chat.threads) || [];
+
+    const activeThread = threads.find((t: any) => String(t.id || t._id) === String(conversationId));
+    const currentIdStr = String(currentUserId || '');
+
+    const otherParticipant = (activeThread?.participants || []).find((p: any) => {
+        const pid = String(p.id || p._id || p.userId || '');
+        return pid && pid !== currentIdStr;
+    }) || {};
+
+    const isDirect = activeThread?.type === 'direct' || (!activeThread && params.name) || activeThread?.title === 'Direct Chat';
+    const otherName = otherParticipant.name || otherParticipant.fullName || otherParticipant.username;
+
+    const chatName = (isDirect && otherName)
+        ? otherName
+        : (params.name && params.name !== 'Direct Chat' && params.name !== 'Host Event Chat')
+        ? params.name
+        : (activeThread?.title || otherName || 'Chat');
+
+    const rawAvatar = otherParticipant.avatarUrl || otherParticipant.profilePictureUrl || otherParticipant.avatar || params.image;
+    const chatImage = resolveImageUrl(rawAvatar);
 
     useEffect(() => {
         // Fetch message logs on launch
@@ -53,7 +75,6 @@ export default function ChatDetailScreen() {
         
         try {
             if (conversationId === 'mock-conversation-id') {
-                // If it is mock state, just push message to local input bar
                 console.log('Sending message in mock conversation mode:', message);
                 setMessage('');
                 return;
@@ -65,44 +86,15 @@ export default function ChatDetailScreen() {
         }
     };
 
-    // Default messages sequence for fallback demonstration
-    const MOCK_MESSAGES = [
-        {
-            id: 'mock-1',
-            senderId: 'other-user-id',
-            message: 'Hi good morning',
-            createdAt: '11:19 AM',
-        },
-        {
-            id: 'mock-2',
-            senderId: currentUserId,
-            message: 'How are u doing',
-            createdAt: '11:20 AM',
-        },
-        {
-            id: 'mock-3',
-            senderId: 'other-user-id',
-            message: 'Are you going to this tour?',
-            createdAt: '11:19 AM',
-            isEventCard: true,
-        },
-        {
-            id: 'mock-4',
-            senderId: currentUserId,
-            message: 'Yeye, am going with my kinds, have already paid for ticket reservation',
-            createdAt: '11:20 AM',
-        },
-    ];
-
-    const displayMessages = conversationId !== 'mock-conversation-id'
+    const displayMessages = Array.isArray(liveMessages)
         ? liveMessages.map((msg: any) => ({
-            id: msg.id,
-            senderId: msg.senderId || msg.sender?.id,
-            message: msg.message,
+            id: msg.id || msg._id || String(Math.random()),
+            senderId: String(msg.senderId || msg.sender?.id || msg.sender?._id || msg.sender || ''),
+            message: msg.message || msg.content || '',
             createdAt: msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
             isEventCard: !!msg.isEventCard,
-        }))
-        : MOCK_MESSAGES;
+          }))
+        : [];
 
     return (
         <KeyboardAvoidingView 
@@ -117,14 +109,14 @@ export default function ChatDetailScreen() {
                     </TouchableOpacity>
  
                     <View style={styles.headerTitleRow}>
-                        <Image source={{ uri: chatImage }} style={styles.headerAvatar} />
-                        <View>
+                        <UserAvatar avatarUrl={chatImage} name={chatName} size={40} />
+                        <View style={{ marginLeft: 10 }}>
                             <Text style={styles.headerName}>{chatName}</Text>
                             <Text style={styles.headerStatus}>Online</Text>
                         </View>
                     </View>
  
-                    <TouchableOpacity style={styles.gridBtn} onPress={() => router.push({ pathname: '/chat-profile', params: { name: chatName, image: chatImage, isGroup: 'false' } })}>
+                    <TouchableOpacity style={styles.gridBtn} onPress={() => router.push({ pathname: '/chat-profile', params: { name: chatName, image: chatImage || '', isGroup: 'false' } })}>
                         <MaterialCommunityIcons name="dots-grid" size={20} color="#FFF" />
                     </TouchableOpacity>
                 </View>

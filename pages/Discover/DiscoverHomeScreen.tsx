@@ -1,10 +1,9 @@
 import { eventService } from '@/services/eventService';
-import { homeService } from '@/services/homeService';
 import { liveStreamService } from '@/services/liveStreamService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import AdsBanner from '@/components/AdsBanner';
 import {
   ActivityIndicator,
   Dimensions,
@@ -19,17 +18,24 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
-
-const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSearchPress: () => void, onFilterPress: () => void, onAiPress: () => void }) => {
+const DiscoverHomeScreen = ({
+  onSearchPress,
+  onFilterPress,
+  onAiPress,
+  activeFilters,
+  onUpdateFilters,
+}: {
+  onSearchPress: () => void;
+  onFilterPress: () => void;
+  onAiPress: () => void;
+  activeFilters: { category: string; range: string };
+  onUpdateFilters: (f: { category: string; range: string }) => void;
+}) => {
   const insets = useSafeAreaInsets();
-  // On Android, StatusBar.currentHeight is the most reliable value for status bar height
   const statusBarHeight = Platform.OS === 'android'
     ? (StatusBar.currentHeight ?? insets.top ?? 24)
     : insets.top;
   const [categories, setCategories] = useState<any[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [advert, setAdvert] = useState<any>(null);
   const [featuredEvent, setFeaturedEvent] = useState<any>(null);
   const [liveStreams, setLiveStreams] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
@@ -38,27 +44,28 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [opts, adverts, recommended, liveData] = await Promise.allSettled([
+        const [opts, recommended, liveData] = await Promise.allSettled([
           eventService.getCreateEventOptions(),
-          homeService.getAdverts(),
           eventService.getRecommendedEvents(),
           liveStreamService.getWatchFeed({ limit: 4 }),
         ]);
 
         if (opts.status === 'fulfilled' && opts.value?.categories) {
-          const cats = [{ id: 'all', name: 'All', active: true }, ...opts.value.categories.map((c: any) => ({ id: c.value || c.id || c, name: c.label || c.name || c }))];
+          const cats = [
+            { id: 'all', name: 'All' },
+            ...opts.value.categories.map((c: any) => ({
+              id: c.value || c.id || c,
+              name: c.label || c.name || c,
+            })),
+          ];
           setCategories(cats);
         } else {
           setCategories([
-            { id: 'all', name: 'All', active: true },
+            { id: 'all', name: 'All' },
             { id: 'amapiano', name: 'Amapiano' },
             { id: 'edm', name: 'EDM' },
             { id: 'festivals', name: 'Festivals' },
           ]);
-        }
-
-        if (adverts.status === 'fulfilled' && adverts.value?.length) {
-          setAdvert(adverts.value[0]);
         }
 
         const recCards: any[] = recommended.status === 'fulfilled'
@@ -82,9 +89,31 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
     fetchAll();
   }, []);
 
-  const filteredEvents = activeCategory === 'All'
-    ? events
-    : events.filter((e: any) => (e.category || '').toLowerCase() === activeCategory.toLowerCase());
+  const filteredEvents = events.filter((e: any) => {
+    // Category filter
+    const matchesCategory =
+      activeFilters.category === 'All' ||
+      (e.category || '').toLowerCase() === activeFilters.category.toLowerCase();
+
+    // Date range filter
+    if (!matchesCategory) return false;
+    if (activeFilters.range === 'all') return true;
+
+    const startsAt = e.startsAt ? new Date(e.startsAt) : null;
+    if (!startsAt) return false;
+
+    const now = new Date();
+    if (activeFilters.range === 'today') {
+      return startsAt.toDateString() === now.toDateString();
+    } else if (activeFilters.range === 'thisMonth') {
+      return startsAt.getMonth() === now.getMonth() && startsAt.getFullYear() === now.getFullYear();
+    } else if (activeFilters.range === 'lastMonth') {
+      const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      return startsAt.getMonth() === lastMonth && startsAt.getFullYear() === year;
+    }
+    return true;
+  });
 
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
@@ -104,10 +133,20 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
           {categories.map((cat) => (
             <TouchableOpacity
               key={cat.id}
-              style={[styles.catChip, activeCategory === cat.name && styles.catChipActive]}
-              onPress={() => setActiveCategory(cat.name)}
+              style={[
+                styles.catChip,
+                activeFilters.category.toLowerCase() === cat.name.toLowerCase() && styles.catChipActive,
+              ]}
+              onPress={() => onUpdateFilters({ ...activeFilters, category: cat.name })}
             >
-              <Text style={[styles.catName, activeCategory === cat.name && styles.catNameActive]}>{cat.name}</Text>
+              <Text
+                style={[
+                  styles.catName,
+                  activeFilters.category.toLowerCase() === cat.name.toLowerCase() && styles.catNameActive,
+                ]}
+              >
+                {cat.name}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -117,22 +156,7 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
         <ActivityIndicator color="#8E2DE2" style={{ marginTop: 40 }} />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Ad Banner */}
-          {advert ? (
-            <TouchableOpacity
-              style={styles.adBanner}
-              onPress={() => advert.id && router.push({ pathname: '/event-details', params: { id: advert.id } })}
-            >
-              <Image source={{ uri: advert.imageUrl || advert.image || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }} style={styles.adImage} />
-              <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']} style={styles.adOverlay}>
-                <View style={styles.adBadge}><Text style={styles.adBadgeText}>{(advert.category || 'EVENT').toUpperCase()}</Text></View>
-                <View style={styles.adFooter}>
-                  <Text style={styles.adTitle}>{advert.title || 'Featured Event'} <Ionicons name="arrow-forward-circle" size={16} /></Text>
-                  {advert.price && <Text style={styles.adPrice}>₦{Number(advert.price).toLocaleString()}</Text>}
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : null}
+          <AdsBanner paddingHorizontal={0} />
 
           {/* Featured Event Card */}
           {featuredEvent && (
@@ -204,7 +228,7 @@ const DiscoverHomeScreen = ({ onSearchPress, onFilterPress, onAiPress }: { onSea
           </Text>
           {filteredEvents.length === 0 && !loading && (
             <View style={{ padding: 30, alignItems: 'center' }}>
-              <Text style={{ color: '#999' }}>No events found in this category</Text>
+              <Text style={{ color: '#999' }}>No events found matching current filters</Text>
             </View>
           )}
           {filteredEvents.map((event: any) => (
@@ -257,14 +281,6 @@ const styles = StyleSheet.create({
   catName: { fontSize: 14, color: '#666', fontWeight: '600' },
   catNameActive: { color: '#FFF' },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
-  adBanner: { width: '100%', height: 150, borderRadius: 16, overflow: 'hidden', marginBottom: 20 },
-  adImage: { ...StyleSheet.absoluteFillObject },
-  adOverlay: { flex: 1, padding: 15, justifyContent: 'space-between' },
-  adBadge: { backgroundColor: '#FFF', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  adBadgeText: { fontSize: 10, fontWeight: '800', color: '#000' },
-  adFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  adTitle: { color: '#FFF', fontWeight: '700', fontSize: 14 },
-  adPrice: { color: '#FFF', fontWeight: '800', fontSize: 16 },
   majorEventCard: { width: '100%', borderRadius: 20, backgroundColor: '#FFF', overflow: 'hidden', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, marginBottom: 20 },
   majorImage: { width: '100%', height: 220 },
   aiBtnFloat: { position: 'absolute', right: 15, bottom: 80, width: 36, height: 36, borderRadius: 10, backgroundColor: '#8E2DE2', justifyContent: 'center', alignItems: 'center' },

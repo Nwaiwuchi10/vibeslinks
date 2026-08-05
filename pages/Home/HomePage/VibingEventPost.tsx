@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Colors } from '../../../constants/Colors';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { resolveImageUrl } from '@/services/apiClient';
 import { eventService } from '@/services/eventService';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface VibingEvent {
   id?: string;
@@ -72,20 +71,18 @@ export default function VibingEventPost({ event, refreshKey }: VibingEventPostPr
   const imageUri = resolveImageUrl(rawImage);
   const locationText = e.location || e.venue || 'Lagos, Nigeria';
   const price = e.ticketTiers?.[0]?.price
-    ? `₦${Number(e.ticketTiers[0].price).toLocaleString()}`
-    : e.price ? `₦${Number(e.price).toLocaleString()}` : '₦8,000';
+    ? `$${Number(e.ticketTiers[0].price).toLocaleString()}`
+    : e.price !== undefined ? (Number(e.price) > 0 ? `₦${Number(e.price).toLocaleString()}` : 'Free') : 'Free';
   const dateText = e.startsAt
     ? new Date(e.startsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Upcoming Event';
-  const friends = attendees.length > 0
-    ? attendees
-    : (e.attendingFriends?.length ? e.attendingFriends : ['https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12', 'https://i.pravatar.cc/150?img=13']);
+  const friends = attendees;
 
   return (
     <View style={styles.feedPostCard}>
       <View style={styles.feedTopBadgeRow}>
         <Text style={styles.feedBadgeText}>See where your friends are vibing</Text>
-        <TouchableOpacity style={styles.vibingBadge} onPress={() => router.push('/friends-vibing')} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.vibingBadge} onPress={() => router.push({ pathname: '/friends-vibing', params: { eventId: e.id } })} activeOpacity={0.8}>
           <View style={styles.vibingStack}>
             {friends.slice(0, 4).map((uri: string, i: number) => (
               <Image key={i} source={{ uri }} style={[styles.vibingAvatar, { marginLeft: i === 0 ? 0 : -10 }]} />

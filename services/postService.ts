@@ -9,8 +9,9 @@ export const postService = {
    */
   async createPost(data: {
     content: string;
-    imageUri?: string;       // local file URI for upload
-    mediaUrl?: string;       // already-hosted URL (optional alternative to imageUri)
+    imageUri?: string;       // single local file URI fallback
+    mediaItems?: { uri: string; type?: 'image' | 'video' }[]; // multiple local media files
+    mediaUrl?: string;       // already-hosted URL
     visibility?: 'public' | 'followers-only' | 'private';
   }) {
     const formData = new FormData();
@@ -23,7 +24,27 @@ export const postService = {
       formData.append('visibility', data.visibility);
     }
 
-    if (data.imageUri) {
+    if (data.mediaItems && data.mediaItems.length > 0) {
+      data.mediaItems.forEach((item, index) => {
+        const isVideo = item.type === 'video';
+        const ext = item.uri.split('.').pop()?.toLowerCase() || (isVideo ? 'mp4' : 'jpg');
+        const mimeType = isVideo
+          ? `video/${ext === 'mov' ? 'quicktime' : 'mp4'}`
+          : (ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg');
+
+        const fileObj = {
+          uri: item.uri,
+          name: `file_${index}.${ext}`,
+          type: mimeType,
+        } as any;
+
+        if (isVideo) {
+          formData.append('videos', fileObj);
+        } else {
+          formData.append('images', fileObj);
+        }
+      });
+    } else if (data.imageUri) {
       const ext = data.imageUri.split('.').pop()?.toLowerCase() || 'jpg';
       const mimeType =
         ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
@@ -38,6 +59,7 @@ export const postService = {
 
     const response = await apiClient.post('/posts', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
     });
 
     store.dispatch(showToast({ type: 'success', message: 'Post created successfully!' }));
@@ -107,6 +129,17 @@ export const postService = {
   async deletePost(id: string) {
     const response = await apiClient.delete(`/posts/${id}`);
     store.dispatch(showToast({ type: 'success', message: 'Post deleted.' }));
+    return response.data;
+  },
+
+  async repostPost(id: string) {
+    const response = await apiClient.post(`/posts/${id}/repost`);
+    store.dispatch(showToast({ type: 'success', message: 'Post reposted!' }));
+    return response.data;
+  },
+
+  async sharePost(id: string) {
+    const response = await apiClient.post(`/posts/${id}/share`);
     return response.data;
   },
 

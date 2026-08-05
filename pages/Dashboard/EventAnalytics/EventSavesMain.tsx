@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,40 +8,61 @@ import {
   StatusBar,
   FlatList,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { hostService } from '@/services/hostService';
+import UserAvatar from '@/components/UserAvatar';
 
 export default function EventSavesMain() {
   const router = useRouter();
+  const { eventId } = useLocalSearchParams<{ eventId?: string }>();
+  const [loading, setLoading] = useState(true);
+  const [savesList, setSavesList] = useState<any[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
 
-  const savesList = [
-    { id: '1', name: 'Sophia Carter', image: require('@/assets/images/artist_event.png') },
-    { id: '2', name: 'Malik Johnson', image: require('@/assets/images/burna_boy.png') },
-    { id: '3', name: 'Elena Rossi', image: require('@/assets/images/dav.png') },
-    { id: '4', name: 'Hiroshi Tanaka', image: require('@/assets/images/davido.png') },
-    { id: '5', name: 'Amina Yusuf', image: require('@/assets/images/modu.png') },
-    { id: '6', name: 'Diego Morales', image: require('@/assets/images/odumodu.png') },
-    { id: '7', name: 'Priya Sharma', image: require('@/assets/images/skibi.png') },
-  ];
+  useEffect(() => {
+    hostService.getSaves(eventId, 'allTime')
+      .then((data: any) => {
+        const list: any[] = data?.users || data?.saves || data?.items || [];
+        setSavesList(list);
+        setTotal(data?.total ?? data?.count ?? data?.summary?.savesCount ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [eventId]);
 
-  const renderItem = ({ item }: { item: typeof savesList[0] }) => (
-    <View style={styles.itemContainer}>
-      <View style={styles.itemLeft}>
-        <Image source={item.image} style={styles.itemImage} />
-        <Text style={styles.itemName}>{item.name}</Text>
+  const renderItem = ({ item }: { item: any }) => {
+    const name = item.fullName || item.name || item.username || 'User';
+    const avatarUrl = item.profilePictureUrl || item.avatarUrl || null;
+    const savedAt = item.savedAt || item.createdAt
+      ? new Date(item.savedAt || item.createdAt).toLocaleDateString()
+      : null;
+
+    return (
+      <View style={styles.itemContainer}>
+        <View style={styles.itemLeft}>
+          <UserAvatar avatarUrl={avatarUrl} name={name} size={50} />
+          <View style={styles.nameCol}>
+            <Text style={styles.itemName}>{name}</Text>
+            {savedAt && <Text style={styles.savedDate}>{savedAt}</Text>}
+          </View>
+        </View>
+        <View style={styles.itemActions}>
+          <TouchableOpacity
+            style={styles.messageBtn}
+            onPress={() => router.push('/dashboard/chat')}
+          >
+            <Text style={styles.btnText}>Message</Text>
+          </TouchableOpacity>
+          <View style={styles.savedBadge}>
+            <Text style={styles.btnText}>Saved</Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.itemActions}>
-        <TouchableOpacity style={styles.messageBtn} onPress={() => router.push('/dashboard/chat')}>
-          <Text style={styles.btnText}>Message</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.saveBtn}>
-          <Text style={styles.btnText}>Save Event</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -52,26 +73,34 @@ export default function EventSavesMain() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color="#1A1A1A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Event Saves</Text>
+        <Text style={styles.headerTitle}>
+          Event Saves{total !== null ? ` (${Number(total).toLocaleString()})` : ''}
+        </Text>
         <View style={{ width: 44 }} />
       </View>
 
-      <FlatList
-        data={savesList}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <ActivityIndicator color="#7B39FD" style={{ flex: 1 }} />
+      ) : savesList.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="bookmark-outline" size={48} color="#CCC" />
+          <Text style={styles.emptyText}>No saves yet</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={savesList}
+          renderItem={renderItem}
+          keyExtractor={(item, idx) => item.id || String(idx)}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FAF9FF',
-  },
+  container: { flex: 1, backgroundColor: '#FAF9FF' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -81,28 +110,13 @@ const styles = StyleSheet.create({
     paddingBottom: 15,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 40,
-  },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#1A1A1A' },
+  listContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 },
   itemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -111,46 +125,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F5F5F9',
   },
-  itemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  itemImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  itemName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    flexShrink: 1,
-  },
-  itemActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  itemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  nameCol: { flex: 1 },
+  itemName: { fontSize: 15, fontWeight: '600', color: '#1A1A1A', flexShrink: 1 },
+  savedDate: { fontSize: 11, color: '#8E8E93', marginTop: 2 },
+  itemActions: { flexDirection: 'row', gap: 8 },
   messageBtn: {
-    backgroundColor: '#000',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 70,
-    alignItems: 'center',
+    backgroundColor: '#000', paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8, minWidth: 70, alignItems: 'center',
   },
-  saveBtn: {
-    backgroundColor: '#7B39FD',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 85,
-    alignItems: 'center',
+  savedBadge: {
+    backgroundColor: '#7B39FD', paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8, minWidth: 60, alignItems: 'center',
   },
-  btnText: {
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  btnText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: '#BBB', fontSize: 14, marginTop: 8 },
 });

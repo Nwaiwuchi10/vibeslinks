@@ -194,4 +194,10 @@ export const hostService = {
     store.dispatch(showToast({ type: 'success', message: 'Campaign ended.' }));
     return response.data;
   },
+
+  async cancelEvent(eventId: string, reason: string, details?: string) {
+    const response = await apiClient.post(`/host-dashboard/events/${eventId}/cancel`, { reason, details });
+    store.dispatch(showToast({ type: 'success', message: 'Event cancelled successfully!' }));
+    return response.data;
+  },
 };

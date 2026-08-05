@@ -16,14 +16,21 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { useAppSelector } from '@/store/hooks';
 import { postService } from '@/services/postService';
 import { storyService } from '@/services/storyService';
+import UserAvatar from '@/components/UserAvatar';
 
 type PostType = 'post' | 'story';
 type Visibility = 'public' | 'followers-only' | 'private';
+
+export type SelectedMediaItem = {
+    id: string;
+    uri: string;
+    type: 'image' | 'video';
+};
 
 const VISIBILITY_OPTIONS: { label: string; value: Visibility; icon: string; desc: string }[] = [
     { label: 'Public', value: 'public', icon: 'earth', desc: 'Everyone can see this' },
@@ -32,11 +39,13 @@ const VISIBILITY_OPTIONS: { label: string; value: Visibility; icon: string; desc
 ];
 
 export default function CreatePostScreen() {
+    const insets = useSafeAreaInsets();
+    const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
     const params = useLocalSearchParams<{ defaultType?: 'post' | 'story' }>();
     const authUser = useAppSelector((state) => state.auth.user);
     const [postType, setPostType] = useState<PostType>(params.defaultType || 'post');
     const [content, setContent] = useState('');
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [selectedMedia, setSelectedMedia] = useState<SelectedMediaItem[]>([]);
     const [visibility, setVisibility] = useState<Visibility>('public');
     const [showVisibility, setShowVisibility] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -46,16 +55,24 @@ export default function CreatePostScreen() {
     const pickFromLibrary = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permission needed', 'Please allow access to your photo library.');
+            Alert.alert('Permission needed', 'Please allow access to your media library.');
             return;
         }
+
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
+            mediaTypes: ImagePicker.MediaTypeOptions.All, // Images AND videos altogether
+            allowsMultipleSelection: true,
+            selectionLimit: 10,
             quality: 0.85,
         });
-        if (!result.canceled && result.assets[0]) {
-            setSelectedImage(result.assets[0].uri);
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            const newItems: SelectedMediaItem[] = result.assets.map((asset) => ({
+                id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                uri: asset.uri,
+                type: asset.type === 'video' ? 'video' : 'image',
+            }));
+            setSelectedMedia((prev) => [...prev, ...newItems]);
         }
     };
 
@@ -65,34 +82,48 @@ export default function CreatePostScreen() {
             Alert.alert('Permission needed', 'Please allow camera access.');
             return;
         }
+
         const result = await ImagePicker.launchCameraAsync({
-            allowsEditing: true,
+            mediaTypes: ImagePicker.MediaTypeOptions.All,
             quality: 0.85,
         });
-        if (!result.canceled && result.assets[0]) {
-            setSelectedImage(result.assets[0].uri);
+
+        if (!result.canceled && result.assets && result.assets[0]) {
+            const asset = result.assets[0];
+            const newItem: SelectedMediaItem = {
+                id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                uri: asset.uri,
+                type: asset.type === 'video' ? 'video' : 'image',
+            };
+            setSelectedMedia((prev) => [...prev, newItem]);
         }
     };
 
+    const removeMediaItem = (id: string) => {
+        setSelectedMedia((prev) => prev.filter((item) => item.id !== id));
+    };
+
     const handleSubmit = async () => {
-        if (!content.trim() && !selectedImage) {
-            Alert.alert('Nothing to post', 'Please write something or attach an image.');
+        if (!content.trim() && selectedMedia.length === 0) {
+            Alert.alert('Nothing to post', 'Please write something or attach photos/videos.');
             return;
         }
         setSubmitting(true);
         try {
             if (postType === 'story') {
-                const isLocalFile = selectedImage ? !selectedImage.startsWith('http') : false;
+                const firstItem = selectedMedia[0];
+                const isLocalFile = firstItem ? !firstItem.uri.startsWith('http') : false;
                 await storyService.createStory({
-                    imageUri: isLocalFile ? selectedImage! : undefined,
-                    mediaUrl: !isLocalFile ? selectedImage || undefined : undefined,
+                    imageUri: isLocalFile ? firstItem.uri : undefined,
+                    mediaUrl: !isLocalFile ? firstItem?.uri : undefined,
                     caption: content.trim() || undefined,
                     visibility,
                 });
             } else {
                 await postService.createPost({
                     content: content.trim(),
-                    imageUri: selectedImage ?? undefined,
+                    mediaItems: selectedMedia.map((m) => ({ uri: m.uri, type: m.type })),
+                    imageUri: selectedMedia.length > 0 ? selectedMedia[0].uri : undefined,
                     visibility,
                 });
             }
@@ -168,7 +199,11 @@ export default function CreatePostScreen() {
                 >
                     {/* Author Row */}
                     <View style={styles.authorRow}>
-                        <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                        <UserAvatar
+                            avatarUrl={authUser?.profilePictureUrl || authUser?.avatarUrl}
+                            name={authUser?.fullName || authUser?.name || authUser?.username || 'You'}
+                            size={44}
+                        />
                         <View style={styles.authorMeta}>
                             <Text style={styles.authorName}>
                                 {authUser?.fullName || authUser?.name || authUser?.username || 'You'}
@@ -249,22 +284,52 @@ export default function CreatePostScreen() {
                         autoFocus
                     />
 
-                    {/* Selected Image Preview */}
-                    {selectedImage && (
-                        <View style={styles.imagePreviewContainer}>
-                            <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
-                            <TouchableOpacity
-                                style={styles.removeImageBtn}
-                                onPress={() => setSelectedImage(null)}
+                    {/* Multiple Media Preview Section */}
+                    {selectedMedia.length > 0 && (
+                        <View style={styles.mediaPreviewSection}>
+                            <View style={styles.mediaSectionHeader}>
+                                <Text style={styles.mediaSectionTitle}>
+                                    Attached Media ({selectedMedia.length})
+                                </Text>
+                                <TouchableOpacity onPress={pickFromLibrary}>
+                                    <Text style={styles.addMoreLink}>+ Add More</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                style={styles.mediaScroll}
+                                contentContainerStyle={{ paddingRight: 10 }}
                             >
-                                <Ionicons name="close-circle" size={28} color="#FFF" />
-                            </TouchableOpacity>
+                                {selectedMedia.map((item) => (
+                                    <View key={item.id} style={styles.mediaTile}>
+                                        <Image source={{ uri: item.uri }} style={styles.mediaTileImage} />
+                                        {item.type === 'video' && (
+                                            <View style={styles.videoBadgeOverlay}>
+                                                <Ionicons name="videocam" size={14} color="#FFF" />
+                                            </View>
+                                        )}
+                                        <TouchableOpacity
+                                            style={styles.removeMediaBtn}
+                                            onPress={() => removeMediaItem(item.id)}
+                                        >
+                                            <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+
+                                <TouchableOpacity style={styles.addMoreTile} onPress={pickFromLibrary}>
+                                    <Ionicons name="add" size={28} color={Colors.primary} />
+                                    <Text style={styles.addMoreText}>Add</Text>
+                                </TouchableOpacity>
+                            </ScrollView>
                         </View>
                     )}
                 </ScrollView>
 
                 {/* Bottom Toolbar */}
-                <View style={styles.toolbar}>
+                <View style={[styles.toolbar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + bottomPad }]}>
                     <Text style={styles.toolbarLabel}>Add to your post</Text>
                     <View style={styles.toolbarActions}>
                         <TouchableOpacity style={styles.toolbarBtn} onPress={pickFromLibrary}>
@@ -272,7 +337,7 @@ export default function CreatePostScreen() {
                                 colors={['#43E97B', '#38F9D7']}
                                 style={styles.toolbarIconBg}
                             >
-                                <Ionicons name="image" size={22} color="#FFF" />
+                                <Ionicons name="images" size={22} color="#FFF" />
                             </LinearGradient>
                             <Text style={styles.toolbarBtnLabel}>Gallery</Text>
                         </TouchableOpacity>
@@ -375,11 +440,6 @@ const styles = StyleSheet.create({
         color: Colors.textGray,
         fontWeight: '500',
     },
-    headerTitle: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: Colors.textDark,
-    },
     postBtn: {
         borderRadius: 20,
         overflow: 'hidden',
@@ -451,87 +511,133 @@ const styles = StyleSheet.create({
     visibilityOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
         paddingVertical: 14,
+        paddingHorizontal: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#F5F5F5',
     },
     visibilityOptionActive: {
-        backgroundColor: `${Colors.primary}08`,
+        backgroundColor: '#F9F5FF',
     },
     visibilityOptionLabel: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '600',
-        color: Colors.textDark,
+        color: '#333',
     },
     visibilityOptionDesc: {
         fontSize: 12,
-        color: Colors.textGray,
+        color: '#888',
         marginTop: 2,
     },
     contentInput: {
         fontSize: 17,
         color: Colors.textDark,
-        lineHeight: 26,
-        minHeight: 120,
+        lineHeight: 24,
+        minHeight: 100,
         textAlignVertical: 'top',
-        paddingTop: 0,
+        marginBottom: 16,
     },
-    imagePreviewContainer: {
-        marginTop: 16,
+    mediaPreviewSection: {
+        marginTop: 10,
+        marginBottom: 20,
+    },
+    mediaSectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    mediaSectionTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#333',
+    },
+    addMoreLink: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: Colors.primary,
+    },
+    mediaScroll: {
+        flexDirection: 'row',
+    },
+    mediaTile: {
+        width: 110,
+        height: 110,
         borderRadius: 16,
+        marginRight: 12,
         overflow: 'hidden',
         position: 'relative',
-    },
-    imagePreview: {
-        width: '100%',
-        height: 260,
-        borderRadius: 16,
         backgroundColor: '#EEE',
     },
-    removeImageBtn: {
+    mediaTileImage: {
+        width: '100%',
+        height: '100%',
+    },
+    videoBadgeOverlay: {
         position: 'absolute',
-        top: 10,
-        right: 10,
+        bottom: 8,
+        left: 8,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 8,
+    },
+    removeMediaBtn: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        borderRadius: 12,
+    },
+    addMoreTile: {
+        width: 110,
+        height: 110,
+        borderRadius: 16,
+        borderWidth: 1.5,
+        borderColor: Colors.primary,
+        borderStyle: 'dashed',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#F9F5FF',
+    },
+    addMoreText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: Colors.primary,
+        marginTop: 4,
     },
     toolbar: {
         backgroundColor: '#FFF',
         borderTopWidth: 1,
         borderTopColor: '#EFEFEF',
         paddingHorizontal: 20,
-        paddingVertical: 14,
-        paddingBottom: Platform.OS === 'ios' ? 24 : 14,
+        paddingTop: 12,
+        paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     },
     toolbarLabel: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
-        color: Colors.textGray,
-        marginBottom: 12,
+        color: '#999',
+        marginBottom: 10,
     },
     toolbarActions: {
         flexDirection: 'row',
-        gap: 20,
+        justifyContent: 'space-between',
     },
     toolbarBtn: {
         alignItems: 'center',
-        flex: 1,
     },
     toolbarIconBg: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 6,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
-        elevation: 3,
+        marginBottom: 4,
     },
     toolbarBtnLabel: {
         fontSize: 11,
-        color: Colors.textGray,
-        fontWeight: '500',
+        fontWeight: '600',
+        color: '#666',
     },
 });

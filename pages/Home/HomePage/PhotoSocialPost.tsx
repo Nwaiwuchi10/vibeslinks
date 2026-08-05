@@ -4,20 +4,23 @@ import { postService } from '@/services/postService';
 import { userService } from '@/services/userService';
 import { useAppSelector } from '@/store/hooks';
 import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import { Video, ResizeMode } from 'expo-av';
+import { ResizeMode, Video } from 'expo-av';
+import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Dimensions,
     FlatList,
     Image,
     Modal,
-    ScrollView,
+    Share,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
-    Dimensions,
+    View
 } from 'react-native';
+
+import { navigateToUserProfile } from '@/utils/profileNavigation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -51,6 +54,7 @@ export type PostData = {
     likesCount?: number;
     commentsCount?: number;
     sharesCount?: number;
+    repostsCount?: number;
     createdAt?: string;
     visibility?: string;
     myReaction?: string;
@@ -97,23 +101,31 @@ function VideoCell({ uri }: { uri: string }) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
 
-    const resolvedUri = resolveImageUrl(uri) || uri;
+    let resolvedUri = resolveImageUrl(uri) || uri;
 
     const togglePlay = async () => {
         if (!videoRef.current) return;
-        if (isPlaying) {
-            await videoRef.current.pauseAsync();
-            setIsPlaying(false);
-        } else {
-            await videoRef.current.playAsync();
-            setIsPlaying(true);
+        try {
+            if (isPlaying) {
+                await videoRef.current.pauseAsync();
+                setIsPlaying(false);
+            } else {
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+            }
+        } catch (err) {
+            console.log('[VideoCell] Video play/pause status handled:', err);
         }
     };
 
     const toggleMute = async () => {
         if (!videoRef.current) return;
-        await videoRef.current.setIsMutedAsync(!isMuted);
-        setIsMuted(!isMuted);
+        try {
+            await videoRef.current.setIsMutedAsync(!isMuted);
+            setIsMuted(!isMuted);
+        } catch (err) {
+            console.log('[VideoCell] Video mute status handled:', err);
+        }
     };
 
     return (
@@ -159,13 +171,23 @@ function VideoCell({ uri }: { uri: string }) {
 
 // ─── Media Renderer ───────────────────────────────────────────────────────────
 
-function MediaRenderer({ post, imageSource }: { post?: PostData; imageSource?: any }) {
+function MediaRenderer({
+    post,
+    imageSource,
+    onMediaPress,
+}: {
+    post?: PostData;
+    imageSource?: any;
+    onMediaPress?: () => void;
+}) {
     const allUrls: string[] = [];
     const addUrl = (u?: string | null) => {
         if (!u) return;
-        const resolved = resolveImageUrl(u);
-        if (resolved && !allUrls.includes(resolved)) {
-            allUrls.push(resolved);
+        let resolved = resolveImageUrl(u);
+        if (resolved) {
+            if (!allUrls.includes(resolved)) {
+                allUrls.push(resolved);
+            }
         }
     };
 
@@ -185,7 +207,11 @@ function MediaRenderer({ post, imageSource }: { post?: PostData; imageSource?: a
     // If no backend URLs but legacy imageSource provided
     if (allUrls.length === 0) {
         if (imageSource) {
-            return <Image source={imageSource} style={styles.socialImage} />;
+            return (
+                <TouchableOpacity activeOpacity={0.9} onPress={onMediaPress}>
+                    <Image source={imageSource} style={styles.socialImage} />
+                </TouchableOpacity>
+            );
         }
         return null;
     }
@@ -195,13 +221,28 @@ function MediaRenderer({ post, imageSource }: { post?: PostData; imageSource?: a
         const url = allUrls[0];
         const hint = typeHints[0] || post?.mediaType;
         if (isVideoUrl(url, hint)) {
-            return <VideoCell uri={url} />;
+            return (
+                <TouchableOpacity activeOpacity={0.95} onPress={onMediaPress}>
+                    <VideoCell uri={url} />
+                </TouchableOpacity>
+            );
         }
-        return <Image source={{ uri: url }} style={styles.socialImage} resizeMode="cover" />;
+        return (
+            <TouchableOpacity activeOpacity={0.95} onPress={onMediaPress}>
+                <ExpoImage source={{ uri: url }} style={styles.socialImage} contentFit="cover" />
+            </TouchableOpacity>
+        );
     }
 
     // Multiple media items — swipeable paged carousel
-    return <MediaCarousel allUrls={allUrls} typeHints={typeHints} mediaType={post?.mediaType} />;
+    return (
+        <MediaCarousel
+            allUrls={allUrls}
+            typeHints={typeHints}
+            mediaType={post?.mediaType}
+            onMediaPress={onMediaPress}
+        />
+    );
 }
 
 // ─── Swipeable Carousel ───────────────────────────────────────────────────────
@@ -210,13 +251,22 @@ function MediaCarousel({
     allUrls,
     typeHints,
     mediaType,
+    onMediaPress,
 }: {
     allUrls: string[];
     typeHints: string[];
     mediaType?: string;
+    onMediaPress?: () => void;
 }) {
     const [activeIndex, setActiveIndex] = useState(0);
     const flatRef = useRef<FlatList>(null);
+    const lastTap = useRef<number>(0);
+
+    const handlePress = () => {
+        const now = Date.now();
+        lastTap.current = now;
+        onMediaPress?.();
+    };
 
     const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
@@ -241,11 +291,17 @@ function MediaCarousel({
                 renderItem={({ item: url, index: idx }) => {
                     const hint = typeHints[idx] || mediaType;
                     return (
-                        <View style={styles.carouselSlide}>
-                            {isVideoUrl(url, hint)
-                                ? <VideoCell uri={url} />
-                                : <Image source={{ uri: url }} style={styles.socialImage} resizeMode="cover" />}
-                        </View>
+                        <TouchableOpacity
+                            style={styles.carouselSlide}
+                            activeOpacity={0.95}
+                            onPress={handlePress}
+                        >
+                            {isVideoUrl(url, hint) ? (
+                                <VideoCell uri={url} />
+                            ) : (
+                                <ExpoImage source={{ uri: url }} style={styles.socialImage} contentFit="cover" />
+                            )}
+                        </TouchableOpacity>
                     );
                 }}
             />
@@ -279,12 +335,15 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
     const currentUser = useAppSelector((state) => state.auth?.user);
     const [showOptions, setShowOptions] = useState(false);
     const [showHideModal, setShowHideModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [isHidden, setIsHidden] = useState(false);
 
     const author = post?.author || post?.user;
     const [isFollowing, setIsFollowing] = useState(false);
     const [likesCount, setLikesCount] = useState(post?.likesCount ?? 0);
     const [hasLiked, setHasLiked] = useState(false);
+    const [repostsCount, setRepostsCount] = useState(post?.repostsCount ?? 0);
+    const [hasReposted, setHasReposted] = useState(false);
 
     // Is the current user the creator of this post?
     const authorId = author?.id || author?._id;
@@ -299,6 +358,7 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
 
     useEffect(() => {
         if (post?.likesCount !== undefined) setLikesCount(post.likesCount);
+        if (post?.repostsCount !== undefined) setRepostsCount(post.repostsCount);
         const reacted =
             post?.engagement?.myReaction === 'like' ||
             post?.myReaction === 'like' ||
@@ -312,14 +372,37 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
             if (hasLiked) {
                 await postService.removeReactionFromPost(post.id);
                 setHasLiked(false);
-                setLikesCount(prev => Math.max(0, prev - 1));
+                setLikesCount((prev: number) => Math.max(0, prev - 1));
             } else {
                 await postService.reactToPost(post.id, 'like');
                 setHasLiked(true);
-                setLikesCount(prev => prev + 1);
+                setLikesCount((prev: number) => prev + 1);
             }
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const handleRepost = async () => {
+        if (!post?.id) return;
+        try {
+            await postService.repostPost(post.id);
+            setRepostsCount((prev: number) => prev + 1);
+            setHasReposted(true);
+        } catch (err) {
+            console.error('[PhotoSocialPost] Repost error:', err);
+        }
+    };
+
+    const handleShare = async () => {
+        try {
+            const shareContent = post?.content || post?.caption || 'Check out this post on VibezLink!';
+            await Share.share({
+                message: `${shareContent}\n\nShared via VibezLink`,
+            });
+            if (post?.id) await postService.sharePost(post.id);
+        } catch (error) {
+            console.error('[PhotoSocialPost] Share error:', error);
         }
     };
 
@@ -371,6 +454,22 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
         }
     };
 
+    const handleDeletePress = () => {
+        setShowOptions(false);
+        setTimeout(() => setShowDeleteModal(true), 300);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!post?.id) return;
+        try {
+            await postService.deletePost(post.id);
+            setShowDeleteModal(false);
+            setIsHidden(true);
+        } catch (err) {
+            console.error('[PhotoSocialPost] Delete post failed:', err);
+        }
+    };
+
     const goToDetail = () => {
         if (post?.id) {
             router.push({ pathname: '/post-details', params: { id: post.id } });
@@ -397,6 +496,13 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
     const timestamp = timeAgo(post?.createdAt);
     const comments = post?.commentsCount ?? 0;
     const shares = post?.sharesCount ?? 0;
+    const reposts = repostsCount;
+
+    const goToFullscreenFeed = () => {
+        if (post?.id) {
+            router.push({ pathname: '/fullscreen-feed', params: { startId: post.id } });
+        }
+    };
 
     return (
         <>
@@ -406,13 +512,15 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                     <TouchableOpacity
                         style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
                         activeOpacity={0.7}
-                        onPress={goToDetail}
+                        onPress={() => navigateToUserProfile(router, author, currentUserId)}
                     >
                         {avatarUri ? (
                             <Image source={{ uri: avatarUri }} style={styles.socialAvatar} />
                         ) : (
                             <View style={[styles.socialAvatar, styles.avatarPlaceholder]}>
-                                <Ionicons name="person" size={18} color="#CCC" />
+                                <Text style={styles.avatarInitials}>
+                                    {displayName ? displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'VL'}
+                                </Text>
                             </View>
                         )}
                         <View style={{ flex: 1 }}>
@@ -440,7 +548,7 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                     {caption ? <Text style={styles.socialCaption}>{caption}</Text> : null}
                 </TouchableOpacity>
 
-                <MediaRenderer post={post} imageSource={imageSource} />
+                <MediaRenderer post={post} imageSource={imageSource} onMediaPress={goToFullscreenFeed} />
 
                 {/* Actions */}
                 <View style={styles.socialActions}>
@@ -458,13 +566,13 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                         <MaterialCommunityIcons name="comment-outline" size={18} color="#888" />
                         <Text style={styles.actionText}>{comments > 0 ? comments : ''}</Text>
                     </TouchableOpacity>
-                    <View style={styles.actionItem}>
-                        <Feather name="repeat" size={18} color="#888" />
-                        <Text style={styles.actionText}>{shares > 0 ? shares : ''}</Text>
-                    </View>
-                    <View style={styles.actionItem}>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleRepost}>
+                        <Feather name="repeat" size={18} color={hasReposted ? Colors.primary : '#888'} />
+                        <Text style={[styles.actionText, hasReposted && { color: Colors.primary }]}>{reposts > 0 ? reposts : ''}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
                         <Feather name="share" size={18} color="#888" />
-                    </View>
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -485,12 +593,20 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
 
                         {/* Edit Post — only for owner */}
                         {isOwner && (
-                            <TouchableOpacity style={styles.optionBtn} onPress={handleEditPost}>
-                                <View style={styles.optionRow}>
-                                    <Ionicons name="create-outline" size={20} color={Colors.primary} />
-                                    <Text style={[styles.optionBtnText, { color: Colors.primary }]}>Edit Post</Text>
-                                </View>
-                            </TouchableOpacity>
+                            <>
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleEditPost}>
+                                    <View style={styles.optionRow}>
+                                        <Ionicons name="create-outline" size={20} color={Colors.primary} />
+                                        <Text style={[styles.optionBtnText, { color: Colors.primary }]}>Edit Post</Text>
+                                    </View>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleDeletePress}>
+                                    <View style={styles.optionRow}>
+                                        <Ionicons name="trash-outline" size={20} color="#E91E63" />
+                                        <Text style={[styles.optionBtnText, { color: '#E91E63' }]}>Delete Post</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </>
                         )}
 
                         {/* Follow / Unfollow — only for non-owners */}
@@ -544,6 +660,35 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                     </View>
                 </View>
             </Modal>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                visible={showDeleteModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDeleteModal(false)}
+            >
+                <View style={styles.centerModalOverlay}>
+                    <View style={styles.hideModalContent}>
+                        <View style={[styles.hideIconOuter, { backgroundColor: '#FCE8E6' }]}>
+                            <MaterialCommunityIcons name="trash-can-outline" size={32} color="#E91E63" />
+                        </View>
+                        <Text style={styles.hideTitle}>Delete this post?</Text>
+                        <Text style={styles.hideSubtitle}>This action cannot be undone and this post will be removed permanently.</Text>
+                        <View style={styles.hideBtnRow}>
+                            <TouchableOpacity
+                                style={[styles.hideConfirmBtn, { backgroundColor: '#E91E63' }]}
+                                onPress={handleDeleteConfirm}
+                            >
+                                <Text style={styles.hideConfirmText}>Delete</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.hideCancelBtn} onPress={() => setShowDeleteModal(false)}>
+                                <Text style={styles.hideCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </>
     );
 }
@@ -566,9 +711,14 @@ const styles = StyleSheet.create({
     },
     socialAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#EEE' },
     avatarPlaceholder: {
-        backgroundColor: '#F0F0F0',
+        backgroundColor: '#8E2DE2',
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    avatarInitials: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '700',
     },
     socialName: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
     displayName: { fontSize: 12, color: '#888', marginTop: 1 },
@@ -580,15 +730,15 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         lineHeight: 20,
     },
-    socialImage: { width: '100%', height: 300, backgroundColor: '#F5F5F5' },
+    socialImage: { width: SCREEN_WIDTH, height: 300, backgroundColor: '#F5F5F5' },
     // Video
     videoContainer: {
-        width: '100%',
+        width: SCREEN_WIDTH,
         height: 300,
         backgroundColor: '#000',
         position: 'relative',
     },
-    videoPlayer: { width: '100%', height: '100%' },
+    videoPlayer: { width: SCREEN_WIDTH, height: 300 },
     videoOverlay: {
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
@@ -629,9 +779,11 @@ const styles = StyleSheet.create({
     // ── Carousel ──────────────────────────────────────────────────────────────
     carouselWrapper: {
         position: 'relative',
+        height: 300,
     },
     carouselSlide: {
         width: SCREEN_WIDTH,
+        height: 300,
     },
     // "1 / N" counter — top right corner
     slideCounter: {

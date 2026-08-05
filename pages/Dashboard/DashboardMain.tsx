@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useAppSelector } from '@/store/hooks';
 import { hostService } from '@/services/hostService';
 import { Colors } from '@/constants/Colors';
+import UserAvatar from '@/components/UserAvatar';
 
 const { width } = Dimensions.get('window');
 
@@ -37,6 +38,8 @@ export default function DashboardMain() {
   const [engagementModalVisible, setEngagementModalVisible] = useState(false);
   const [engagementDateRange, setEngagementDateRange] = useState('Today');
   const [loading, setLoading] = useState(true);
+  const [engagementLoading, setEngagementLoading] = useState(false);
+  const [audienceData, setAudienceData] = useState<any>(null);
 
   const fetchOverview = async (range: string) => {
     setLoading(true);
@@ -49,20 +52,37 @@ export default function DashboardMain() {
     }
   };
 
+  const fetchEngagement = async (range: string) => {
+    setEngagementLoading(true);
+    try {
+      const data = await hostService.getAudience(RANGE_MAP[range] || 'today');
+      setAudienceData(data);
+    } catch (err) {
+      console.warn('[Dashboard] Audience fetch failed:', err);
+    } finally {
+      setEngagementLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchOverview(selectedDateRange);
   }, [selectedDateRange]);
+
+  useEffect(() => {
+    fetchEngagement(engagementDateRange);
+  }, [engagementDateRange]);
 
   // Extract overview stats with safe fallbacks
   const stats = overview?.summary || overview?.stats || {};
   const ticketsSold = stats.ticketsSold ?? stats.tickets_sold ?? overview?.ticketsSold ?? '—';
   const revenue = stats.revenue ?? overview?.revenue ?? null;
-  const audienceReach = stats.audienceReach ?? stats.reach ?? overview?.reach ?? '—';
+  const audienceReach = stats.reach ?? stats.audienceReach ?? overview?.reach ?? '—';
   const activeCampaigns = stats.activeCampaigns ?? overview?.activeCampaigns ?? '—';
-  const engagement = overview?.audienceEngagement || overview?.engagement || {};
-  const newFollowers = engagement.newFollowers ?? engagement.followers ?? '—';
-  const eventSaves = engagement.eventSaves ?? engagement.saves ?? '—';
-  const shares = engagement.shares ?? '—';
+  const engagement = audienceData?.summary || audienceData?.audienceEngagement ||
+    overview?.audienceEngagement || overview?.engagement || {};
+  const newFollowers = engagement.newFollowersCount ?? engagement.newFollowers ?? '—';
+  const eventSaves = engagement.savesCount ?? engagement.eventSaves ?? '—';
+  const shares = engagement.sharesCount ?? engagement.shares ?? '—';
   const upcomingEvents: any[] = overview?.upcomingEvents || [];
 
   const fmtRevenue = revenue != null
@@ -91,12 +111,13 @@ export default function DashboardMain() {
         {/* Profile / Host Header */}
         <View style={styles.hostHeader}>
           <View style={styles.hostInfo}>
-            <TouchableOpacity style={styles.backBtnCircle} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backBtnCircle} onPress={() => router.push('/(tabs)/profile')}>
               <Ionicons name="arrow-back" size={20} color="#1A1A1A" />
             </TouchableOpacity>
-            <Image 
-              source={user?.profilePictureUrl || user?.avatarUrl ? { uri: user.profilePictureUrl || user.avatarUrl } : require('@/assets/images/dav.png')} 
-              style={styles.hostAvatar} 
+            <UserAvatar 
+              avatarUrl={user?.profilePictureUrl || user?.avatarUrl} 
+              name={user?.fullName || user?.name || 'Vibez Host'} 
+              size={44} 
             />
             <View style={styles.hostTextCol}>
               <Text style={styles.hostName}>{user?.fullName || user?.name || 'Vibez Host'}</Text>
@@ -278,62 +299,68 @@ export default function DashboardMain() {
             </TouchableOpacity>
           </View>
 
-          {/* New Followers */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/profile/following')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="people-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>{typeof newFollowers === 'number' ? newFollowers.toLocaleString() : String(newFollowers)}</Text>
-                <Text style={styles.engagementLabel}>New Followers</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+          {engagementLoading ? (
+            <ActivityIndicator color="#7B39FD" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              {/* New Followers */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/profile/following')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="people-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof newFollowers === 'number' ? newFollowers.toLocaleString() : String(newFollowers)}</Text>
+                    <Text style={styles.engagementLabel}>New Followers</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
 
-          {/* Event Saves */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/dashboard/analytics/event-saves')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="bookmark-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>{typeof eventSaves === 'number' ? eventSaves.toLocaleString() : String(eventSaves)}</Text>
-                <Text style={styles.engagementLabel}>Event Saves</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+              {/* Event Saves */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/dashboard/analytics/event-saves')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="bookmark-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof eventSaves === 'number' ? eventSaves.toLocaleString() : String(eventSaves)}</Text>
+                    <Text style={styles.engagementLabel}>Event Saves</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
 
-          {/* Shares */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/dashboard/analytics/shares')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="paper-plane-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>{typeof shares === 'number' ? shares.toLocaleString() : String(shares)}</Text>
-                <Text style={styles.engagementLabel}>Shares</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+              {/* Shares */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/dashboard/analytics/shares')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="paper-plane-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof shares === 'number' ? shares.toLocaleString() : String(shares)}</Text>
+                    <Text style={styles.engagementLabel}>Shares</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </ScrollView>
 

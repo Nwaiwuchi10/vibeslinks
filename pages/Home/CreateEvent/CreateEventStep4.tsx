@@ -4,13 +4,17 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const CreateEventStep4 = ({ onHome }: { onHome: () => void }) => {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.content}>
         <View style={styles.checkContainer}>
           <Ionicons name="checkmark" size={60} color="#FFF" />
@@ -18,7 +22,7 @@ const CreateEventStep4 = ({ onHome }: { onHome: () => void }) => {
         <Text style={styles.title}>Event Published</Text>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity style={styles.homeBtn} onPress={onHome}>
           <Text style={styles.homeText}>Go to Home</Text>
         </TouchableOpacity>

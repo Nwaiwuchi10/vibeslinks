@@ -9,6 +9,8 @@ import {
   SafeAreaView,
   Dimensions,
   ActivityIndicator,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCreateEvent } from './CreateEventContext';
@@ -16,7 +18,19 @@ import { eventService } from '@/services/eventService';
 
 const { width } = Dimensions.get('window');
 
-const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () => void, onPublish: () => void, isPublishing?: boolean }) => {
+const CreateEventPreview = ({
+  onBack,
+  onPublish,
+  isPublishing,
+  onSaveDraft,
+  isSavingDraft,
+}: {
+  onBack: () => void;
+  onPublish: () => void;
+  isPublishing?: boolean;
+  onSaveDraft?: () => void;
+  isSavingDraft?: boolean;
+}) => {
   const { eventData } = useCreateEvent();
   const [availableArtists, setAvailableArtists] = useState<any[]>([]);
 
@@ -105,13 +119,13 @@ const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () =>
         <View style={styles.previewSection}>
           <Text style={styles.sectionTitle}>Featured Artists</Text>
           {getSelectedArtists().length > 0 ? (
-            <View style={styles.artistBox}>
-              {getSelectedArtists().map((artist) => (
-                <View key={artist.id} style={[styles.artistInput, { flexDirection: 'row', alignItems: 'center' }]}>
-                  {artist.avatarUrl && (
-                    <Image source={{ uri: artist.avatarUrl }} style={{ width: 30, height: 30, borderRadius: 15, marginRight: 10 }} />
-                  )}
-                  <Text style={styles.artistInputText}>{artist.name}</Text>
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+              {getSelectedArtists().map(artist => (
+                <View key={artist.id} style={{ alignItems: 'center', width: 70 }}>
+                  <Image source={{ uri: artist.avatarUrl }} style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#EEE' }} />
+                  <Text style={{ fontSize: 11, color: '#333', textAlign: 'center', marginTop: 4 }} numberOfLines={1}>
+                    {artist.name}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -195,13 +209,21 @@ const CreateEventPreview = ({ onBack, onPublish, isPublishing }: { onBack: () =>
       </ScrollView>
 
       <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.draftBtn}>
-          <Text style={[styles.btnText, { color: '#8E2DE2' }]}>Save Draft</Text>
+        <TouchableOpacity 
+          style={[styles.draftBtn, isSavingDraft && { opacity: 0.6 }]} 
+          onPress={onSaveDraft}
+          disabled={isSavingDraft || isPublishing}
+        >
+          {isSavingDraft ? (
+            <ActivityIndicator color="#8E2DE2" size="small" />
+          ) : (
+            <Text style={[styles.btnText, { color: '#8E2DE2' }]}>Save Draft</Text>
+          )}
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.publishBtn, isPublishing && { opacity: 0.7 }]}
           onPress={onPublish}
-          disabled={isPublishing}
+          disabled={isPublishing || isSavingDraft}
         >
           {isPublishing
             ? <ActivityIndicator color="#FFF" size="small" />
@@ -219,7 +241,14 @@ export default CreateEventPreview;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
-  header: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15, alignItems: 'center', justifyContent: 'space-between' },
+  header: { 
+    flexDirection: 'row', 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 10, 
+    paddingBottom: 15, 
+    alignItems: 'center', 
+    justifyContent: 'space-between' 
+  },
   backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   headerTitle: { fontSize: 20, fontWeight: '800', color: '#333' },
   editBtn: { backgroundColor: '#000', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },

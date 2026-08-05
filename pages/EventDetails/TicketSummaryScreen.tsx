@@ -1,27 +1,30 @@
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActivityIndicator } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useDispatch, useSelector } from 'react-redux';
+import StripeCheckoutModal from '@/components/StripeCheckoutModal';
+import StripeWebViewModal from '@/components/StripeWebViewModal';
+import { eventService } from '@/services/eventService';
+import { stripeService } from '@/services/stripeService';
 import { RootState } from '@/store';
 import { setLastPurchase } from '@/store/slices/eventSlice';
-import { stripeService } from '@/services/stripeService';
-import { eventService } from '@/services/eventService';
-import StripeWebViewModal from '@/components/StripeWebViewModal';
-import StripeCheckoutModal from '@/components/StripeCheckoutModal';
+import { useDispatch, useSelector } from 'react-redux';
 
 export default function TicketSummaryScreen() {
+    const insets = useSafeAreaInsets();
+    const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
     const { id, paymentMethod: pmParam, paymentMethodId: pmIdParam } = useLocalSearchParams<{ id?: string; paymentMethod?: string; paymentMethodId?: string }>();
     const dispatch = useDispatch();
     const [showPayment, setShowPayment] = useState(false);
@@ -146,12 +149,12 @@ export default function TicketSummaryScreen() {
         setIsPaying(true);
         try {
             const eventId = id || event.id;
-            const res = await eventService.purchaseTickets(eventId, {
+            const res = await eventService.purchaseEventTickets(eventId, {
                 items: selectedTierIds.map(tierId => ({
                     tierId,
                     quantity: bookingInfo.selectedTiers[tierId],
                 })),
-                paymentMethod: 'stripe',
+                paymentMethod: 'debit-card',
                 paymentIntentId: confirmedIntentId || stripePaymentIntentId,
             });
             dispatch(setLastPurchase(res));
@@ -258,7 +261,7 @@ export default function TicketSummaryScreen() {
             </ScrollView>
 
             {/* Bottom CTA */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: 24 + bottomPad }]}>
                 <TouchableOpacity
                     style={styles.ctaBtn}
                     onPress={() => setShowPayment(true)}
@@ -277,14 +280,14 @@ export default function TicketSummaryScreen() {
             >
                 <View style={styles.modalOverlay}>
                     <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowPayment(false)} />
-                    <View style={styles.paySheet}>
+                    <View style={[styles.paySheet, { paddingBottom: 28 + bottomPad }]}>
                         {/* Close */}
                         <TouchableOpacity style={styles.closeBtn} onPress={() => setShowPayment(false)}>
                             <Ionicons name="close" size={18} color="#666" />
                         </TouchableOpacity>
 
                         {/* Total amount */}
-                        <Text style={styles.payAmount}>₦{total.toLocaleString()}.00</Text>
+                        <Text style={styles.payAmount}>${total.toLocaleString()}.00</Text>
 
                         {/* Breakdown */}
                         <View style={styles.payBreakdown}>
@@ -296,11 +299,11 @@ export default function TicketSummaryScreen() {
                             ))}
                             <View style={styles.payRow}>
                                 <Text style={styles.payLabel}>Fees</Text>
-                                <Text style={styles.payValue}>₦{fee.toLocaleString()}</Text>
+                                <Text style={styles.payValue}>${fee.toLocaleString()}</Text>
                             </View>
                             <View style={[styles.payRow, { borderTopWidth: 1, borderTopColor: '#EBEBEB', paddingTop: 12, marginTop: 4 }]}>
                                 <Text style={styles.payLabel}>Total</Text>
-                                <Text style={styles.payValue}>₦{total.toLocaleString()}</Text>
+                                <Text style={styles.payValue}>${total.toLocaleString()}</Text>
                             </View>
                         </View>
 

@@ -4,9 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../constants/Colors';
 import { router } from 'expo-router';
 import { homeService } from '@/services/homeService';
+import { navigateToUserProfile } from '@/utils/profileNavigation';
+import { useAppSelector } from '@/store/hooks';
+import UserAvatar from '@/components/UserAvatar';
 
 
 const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
+  const currentUser = useAppSelector((state) => state.auth?.user);
+  const currentUserId = currentUser?.id || currentUser?._id;
   const [creators, setCreators] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -61,11 +66,11 @@ const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
                 style={styles.liveCard}
                 imageStyle={{ borderRadius: 12 }}
               >
-                <LiveCardOverlay live={live} />
+                <LiveCardOverlay live={live} currentUserId={currentUserId} />
               </ImageBackground>
             ) : (
               <View style={[styles.liveCard, styles.liveCardPlaceholder]}>
-                <LiveCardOverlay live={live} />
+                <LiveCardOverlay live={live} currentUserId={currentUserId} />
               </View>
             )}
           </TouchableOpacity>
@@ -76,7 +81,7 @@ const LiveCreators = ({ refreshKey }: { refreshKey?: number }) => {
   );
 };
 
-function LiveCardOverlay({ live }: { live: any }) {
+function LiveCardOverlay({ live, currentUserId }: { live: any; currentUserId?: string }) {
   return (
     <View style={styles.liveOverlay}>
       {/* Top Badge */}
@@ -96,7 +101,12 @@ function LiveCardOverlay({ live }: { live: any }) {
       <View>
         <Text style={styles.liveTitle} numberOfLines={2}>{live.title}</Text>
         <View style={styles.liveCreatorRow}>
-          <Image source={{ uri: live.avatar }} style={styles.liveAvatar} />
+          <TouchableOpacity
+            onPress={() => navigateToUserProfile(router, { id: live.creatorId || live.id, name: live.name, avatar: live.avatar }, currentUserId)}
+            activeOpacity={0.8}
+          >
+            <UserAvatar avatarUrl={live.avatar} name={live.name} size={18} />
+          </TouchableOpacity>
           <Text style={styles.liveName}>{live.name}</Text>
           <Text style={styles.liveTime}>{live.time}</Text>
         </View>

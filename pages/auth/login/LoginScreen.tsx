@@ -1,31 +1,31 @@
+import { Colors } from '@/constants/Colors';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   SafeAreaView,
-  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Colors } from '@/constants/Colors';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import SocialButton from '../components/SocialButton';
-import Input from '../components/Input';
 import AuthHeader from '../components/AuthHeader';
+import Input from '../components/Input';
+import SocialButton from '../components/SocialButton';
 
+import { useSocialAuth } from '@/hooks/useSocialAuth';
 import { authService } from '@/services/authService';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
-import { useSocialAuth } from '@/hooks/useSocialAuth';
 
 export default function LoginScreen() {
   const dispatch = useAppDispatch();
   const [step, setStep] = useState<'social' | 'form'>('social');
-  const [authMode, setAuthMode] = useState<'email' | 'phone'>('phone');
+  const [authMode, setAuthMode] = useState<'email' | 'phone'>('email');
 
   // form states
   const [email, setEmail] = useState('');
@@ -71,7 +71,7 @@ export default function LoginScreen() {
   const renderSocial = () => (
     <View style={styles.contentContainer}>
       <AuthHeader type="logo" />
-      
+
       <Text style={styles.title}>Log in</Text>
       <Text style={styles.subtitle}>Welcome back, we have missed you</Text>
 
@@ -133,12 +133,12 @@ export default function LoginScreen() {
   const renderForm = () => (
     <View style={styles.contentContainer}>
       <AuthHeader type="avatar" />
-      
+
       <Text style={styles.title}>Log in</Text>
       <Text style={styles.subtitle}>Welcome back, we have missed you</Text>
 
       <View style={styles.formContainer}>
-        
+
         <View style={styles.labelRow}>
           <Text style={styles.inputLabel}>{authMode === 'email' ? 'Email' : 'Phone'}</Text>
           <TouchableOpacity onPress={() => setAuthMode(authMode === 'email' ? 'phone' : 'email')}>
@@ -178,7 +178,7 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           isPassword
         />
-        
+
         <TouchableOpacity
           style={styles.forgotPassword}
           onPress={() => router.push('/(auth)/reset-password')}
@@ -224,7 +224,7 @@ export default function LoginScreen() {
           </View>
 
           {step === 'social' ? renderSocial() : renderForm()}
-          
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

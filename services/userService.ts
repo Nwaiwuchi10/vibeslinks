@@ -289,4 +289,7 @@ export const userService = {
     store.dispatch(showToast({ type: 'success', message: 'User unfollowed successfully.' }));
     return response.data;
   },
+  async getHostProfile(id: string) {
+    return (await apiClient.get(`/users/${id}/profile`)).data;
+  },
 };

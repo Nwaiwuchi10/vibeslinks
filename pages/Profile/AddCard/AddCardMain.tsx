@@ -4,20 +4,22 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { userService } from '@/services/userService';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
-
 export default function AddCardMain() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const router = useRouter();
   const dispatch = useAppDispatch();
 
@@ -60,7 +62,7 @@ export default function AddCardMain() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" />
       
       {/* Header */}
@@ -147,7 +149,7 @@ export default function AddCardMain() {
       </ScrollView>
 
       {/* Fixed Bottom Button */}
-      <View style={styles.bottomContainer}>
+      <View style={[styles.bottomContainer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity style={styles.addButton} onPress={handleAddCard} disabled={submitting}>
           {submitting ? (
             <ActivityIndicator color="#FFF" />

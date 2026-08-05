@@ -54,6 +54,9 @@ export default function TicketManagementMain() {
       .catch(() => {});
   }, []);
 
+  // Chart bars and Y-axis from API
+  const [salesBars, setSalesBars] = useState<Array<{ label: string; height: number; formattedValue: string }>>([]);
+
   const loadTicketData = async () => {
     setLoading(true);
     try {
@@ -72,23 +75,32 @@ export default function TicketManagementMain() {
       if (overviewData.status === 'fulfilled') {
         const s = overviewData.value?.summary || overviewData.value?.stats || {};
         setStats(s);
-        
-        // Populate ticket tiers dynamically from upcoming event details or categories
-        const upcoming = overviewData.value?.upcomingEvents || [];
-        const activeEvt = upcoming.find((e: any) => eventId ? e.id === eventId : true);
-        if (activeEvt?.ticketPricingTiers) {
-          setTicketTiers(activeEvt.ticketPricingTiers);
-        } else {
-          setTicketTiers([
-            { id: 'vip', name: 'VIP', price: 150000, soldCount: 450, totalTickets: 500 },
-            { id: 'vvip', name: 'VVIP', price: 350000, soldCount: 450, totalTickets: 459 }
-          ]);
-        }
       }
 
       if (ticketsData.status === 'fulfilled') {
-        const list = ticketsData.value?.latestTicketPurchases || ticketsData.value?.purchases || [];
+        const tData = ticketsData.value;
+        // Real ticket purchases
+        const list = tData?.latestTicketPurchases || tData?.purchases || [];
         setTicketPurchases(list);
+
+        // Real ticket tiers from API — no placeholder fallback
+        const tiers = tData?.ticketTiers || tData?.ticketCategories?.categories || [];
+        setTicketTiers(tiers);
+
+        // Real chart bars from salesPerformance — preserve label + formattedValue
+        const rawBars: any[] = tData?.salesPerformance?.bars || [];
+        if (rawBars.length > 0) {
+          const maxVal = Math.max(...rawBars.map((b: any) => b?.value ?? 0), 1);
+          setSalesBars(
+            rawBars.map((b: any) => ({
+              label: b.label || '',
+              height: Math.round(((b?.value ?? 0) / maxVal) * 100),
+              formattedValue: b.formattedValue || '',
+            }))
+          );
+        } else {
+          setSalesBars([]);
+        }
       }
     } catch (err) {
       console.warn('[TicketManagement] load error:', err);
@@ -113,13 +125,22 @@ export default function TicketManagementMain() {
   };
 
   // Safe variables mapping from stats
-  const ticketsSold = stats.ticketsSold ?? stats.tickets_sold ?? 0;
+  const ticketsSold = stats.totalTicketsSold ?? stats.ticketsSold ?? stats.tickets_sold ?? 0;
   const revenue = stats.revenue ?? 0;
   const refunds = stats.refunds ?? 0;
-  const available = stats.availableTickets ?? stats.available_tickets ?? stats.audienceReach ?? '—';
+  const available = stats.available ?? stats.availableTickets ?? stats.available_tickets ?? stats.audienceReach ?? '—';
 
-  // Format chart dynamically using purchases over time or simple heights
-  const chartHeightMap = [20, 45, 15, 60, 85, 40, 75];
+  // Use real chart bars from API, or empty if none yet
+  const chartBars = salesBars;
+  // Compute dynamic Y-axis labels from top bar values
+  const yAxisLabels: string[] = (() => {
+    if (chartBars.length === 0) return [];
+    const maxFormatted = chartBars.reduce((best, b) =>
+      b.height > best.height ? b : best, chartBars[0]
+    ).formattedValue;
+    // Show 5 evenly spaced labels from max down to 0
+    return [maxFormatted, '', '', '', '₦0'].filter(Boolean);
+  })();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -192,38 +213,46 @@ export default function TicketManagementMain() {
             </View>
 
             {/* Graphical Bars */}
-            <View style={styles.chartContainer}>
-              <View style={styles.yAxisLabels}>
-                <Text style={styles.axisLabel}>₦4M</Text>
-                <Text style={styles.axisLabel}>₦1.2M</Text>
-                <Text style={styles.axisLabel}>₦201k</Text>
-                <Text style={styles.axisLabel}>₦60k</Text>
-                <Text style={styles.axisLabel}>₦9k</Text>
+            {chartBars.length === 0 ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                <Text style={{ color: '#BBB', fontSize: 12 }}>No sales data for this period</Text>
               </View>
+            ) : (
+              <View style={styles.chartContainer}>
+                {/* Y-Axis */}
+                <View style={styles.yAxisLabels}>
+                  {yAxisLabels.map((lbl, i) => (
+                    <Text key={i} style={styles.axisLabel}>{lbl}</Text>
+                  ))}
+                </View>
 
-              <View style={styles.barsArea}>
-                {chartHeightMap.map((h, index) => (
-                  <View key={index} style={styles.barTrack}>
-                    <View 
-                      style={[
-                        styles.barFill, 
-                        { 
-                          height: `${h}%`,
-                          backgroundColor: index === 6 ? '#7B39FD' : '#EBE4FF'
-                        }
-                      ]} 
-                    />
-                  </View>
-                ))}
+                <View style={styles.barsArea}>
+                  {chartBars.map((bar, index) => (
+                    <View key={index} style={styles.barCol}>
+                      <View style={styles.barTrack}>
+                        <View
+                          style={[
+                            styles.barFill,
+                            {
+                              height: `${bar.height}%`,
+                              backgroundColor: index === chartBars.length - 1 ? '#7B39FD' : '#EBE4FF',
+                            },
+                          ]}
+                        />
+                      </View>
+                      {bar.label ? <Text style={styles.barXLabel}>{bar.label}</Text> : null}
+                    </View>
+                  ))}
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           {/* Ticket Categories Swipe View Carousel */}
           <View style={styles.carouselSection}>
             <View style={styles.carouselHeader}>
               <Text style={styles.carouselTitle}>Ticket Categories</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.detailsBtn}
                 onPress={() => router.push('/dashboard/analytics/all-tickets' as any)}
               >
@@ -232,38 +261,57 @@ export default function TicketManagementMain() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
-              {ticketTiers.map((tier: any, idx: number) => {
-                const sold = tier.soldCount ?? tier.sold ?? 0;
-                const total = tier.totalTickets ?? tier.capacity ?? 500;
-                const remaining = Math.max(0, total - sold);
-                return (
-                  <View key={tier.id || idx} style={styles.categoryCard}>
-                    <View style={styles.categoryCardHeader}>
-                      <View style={styles.cardIconBox}>
-                        <Ionicons name="phone-portrait-outline" size={18} color="#7B39FD" />
+            {ticketTiers.length === 0 ? (
+              <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
+                <Text style={{ color: '#BBB', fontSize: 12 }}>No ticket categories found</Text>
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContent}>
+                {ticketTiers.map((tier: any, idx: number) => {
+                  const sold = tier.soldCount ?? tier.sold ?? 0;
+                  const total = tier.totalTickets ?? tier.capacity ?? 0;
+                  const remaining = tier.remaining ?? Math.max(0, total - sold);
+                  const tierRevenue = tier.revenue ?? 0;
+                  const tierName = tier.tierName || tier.name || tier.title || '';
+                  const tierPrice = tier.price ?? (tierRevenue > 0 && sold > 0 ? Math.round(tierRevenue / sold) : 0);
+                  const description = tier.description || tier.priceLabel || null;
+                  return (
+                    <View key={tier.id || idx} style={styles.categoryCard}>
+                      <View style={styles.categoryCardHeader}>
+                        <View style={styles.cardIconBox}>
+                          <Ionicons name="ticket-outline" size={18} color="#7B39FD" />
+                        </View>
+                        <Text style={styles.cardPrice}>
+                          ₦{Number(tierPrice).toLocaleString()}<Text style={styles.perPerson}>/Person</Text>
+                        </Text>
                       </View>
-                      <Text style={styles.cardPrice}>₦{Number(tier.price).toLocaleString()}<Text style={styles.perPerson}>/Person</Text></Text>
-                    </View>
-                    <Text style={styles.cardCategoryName}>{tier.name || tier.title || 'General'}</Text>
-                    <View style={styles.featuresList}>
-                      <Text style={styles.featureItem}>• Lounge access</Text>
-                      <Text style={styles.featureItem}>• Priority entry</Text>
-                    </View>
-                    <View style={styles.cardBottomRow}>
-                      <View style={styles.statMiniBox}>
-                        <Text style={styles.statMiniVal}>{Number(sold).toLocaleString()}</Text>
-                        <Text style={styles.statMiniLabel}>Sold</Text>
+                      <Text style={styles.cardCategoryName}>{tierName}</Text>
+                      {description ? (
+                        <View style={styles.featuresList}>
+                          <Text style={styles.featureItem}>{description}</Text>
+                        </View>
+                      ) : null}
+                      <View style={styles.cardBottomRow}>
+                        <View style={styles.statMiniBox}>
+                          <Text style={styles.statMiniVal}>{Number(sold).toLocaleString()}</Text>
+                          <Text style={styles.statMiniLabel}>Sold</Text>
+                        </View>
+                        <View style={styles.statMiniBox}>
+                          <Text style={styles.statMiniVal}>{Number(remaining).toLocaleString()}</Text>
+                          <Text style={styles.statMiniLabel}>Remaining</Text>
+                        </View>
+                        {tierRevenue > 0 && (
+                          <View style={styles.statMiniBox}>
+                            <Text style={styles.statMiniVal}>₦{Number(tierRevenue).toLocaleString()}</Text>
+                            <Text style={styles.statMiniLabel}>Revenue</Text>
+                          </View>
+                        )}
                       </View>
-                      <View style={styles.statMiniBox}>
-                        <Text style={styles.statMiniVal}>{Number(remaining).toLocaleString()}</Text>
-                        <Text style={styles.statMiniLabel}>Remaining</Text>
-                      </View>
                     </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
 
           {/* Latest Ticket Purchases */}
@@ -285,17 +333,25 @@ export default function TicketManagementMain() {
               </View>
             ) : (
               ticketPurchases.slice(0, 5).map((item: any, idx: number) => {
-                const buyerName = item.buyer?.fullName || item.buyerName || 'Buyer';
-                const ticketsText = item.ticketTierName || `${item.quantity} x Tickets`;
+                // Backend field: attendeeName (or buyer.fullName fallback)
+                const buyerName = item.attendeeName || item.buyer?.fullName || item.buyerName || 'Buyer';
+                // Backend field: tierSummary (or fallback to ticketTierName/quantity)
+                const ticketsText = item.tierSummary || item.ticketTierName || (item.quantity ? `${item.quantity} × Ticket${item.quantity > 1 ? 's' : ''}` : 'Ticket');
                 const amt = item.totalAmount ?? item.amount ?? 0;
-                const dt = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Recent';
+                // Backend field: dateLabel (or fallback to createdAt)
+                const dt = item.dateLabel || (item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '');
+                const avatarUrl = item.attendeeAvatarUrl || item.buyer?.profilePictureUrl || null;
                 const initial = buyerName.substring(0, 2).toUpperCase();
                 return (
-                  <View key={item.id || idx} style={styles.purchaseRow}>
+                  <View key={item.purchaseId || item.id || idx} style={styles.purchaseRow}>
                     <View style={styles.purchaseLeft}>
-                      <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: '#7B39FD' }]}>
-                        <Text style={styles.placeholderText}>{initial}</Text>
-                      </View>
+                      {avatarUrl ? (
+                        <Image source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" />
+                      ) : (
+                        <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: '#7B39FD' }]}>
+                          <Text style={styles.placeholderText}>{initial}</Text>
+                        </View>
+                      )}
                       <View style={styles.infoCol}>
                         <Text style={styles.purchaserName}>{buyerName}</Text>
                         <Text style={styles.purchaseDetails}>{ticketsText}</Text>
@@ -303,7 +359,7 @@ export default function TicketManagementMain() {
                     </View>
                     <View style={styles.purchaseRight}>
                       <Text style={styles.purchaseAmount}>₦{Number(amt).toLocaleString()}</Text>
-                      <Text style={styles.purchaseDate}>{dt}</Text>
+                      {dt ? <Text style={styles.purchaseDate}>{dt}</Text> : null}
                     </View>
                   </View>
                 );
@@ -434,11 +490,13 @@ const styles = StyleSheet.create({
   chartSubtitle: { fontSize: 11, fontWeight: '600', color: '#8F8E9C' },
   chartValColor: { color: '#7B39FD', fontWeight: '800' },
   chartContainer: { flexDirection: 'row', height: 160, alignItems: 'flex-end' },
-  yAxisLabels: { width: 45, height: '100%', justifyContent: 'space-between', paddingBottom: 4 },
+  yAxisLabels: { width: 50, height: '100%', justifyContent: 'space-between', paddingBottom: 4 },
   axisLabel: { fontSize: 10, fontWeight: '700', color: '#B3B2BD' },
   barsArea: { flex: 1, height: '100%', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', paddingBottom: 4 },
-  barTrack: { width: 14, height: '100%', justifyContent: 'flex-end' },
+  barCol: { alignItems: 'center', flex: 1 },
+  barTrack: { width: 14, height: 140, justifyContent: 'flex-end' },
   barFill: { width: 14, borderRadius: 10 },
+  barXLabel: { fontSize: 9, fontWeight: '600', color: '#B3B2BD', marginTop: 4 },
   carouselSection: { marginTop: 25 },
   carouselHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
   carouselTitle: { fontSize: 16, fontWeight: '800', color: '#1D1D2D' },

@@ -17,6 +17,7 @@ import { userService } from '@/services/userService';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
 import { Colors } from '@/constants/Colors';
+import UserAvatar from '@/components/UserAvatar';
 
 export default function FollowingMain() {
   const router = useRouter();
@@ -71,14 +72,14 @@ export default function FollowingMain() {
   const renderItem = ({ item }: { item: any }) => {
     const userId = String(item.id || item.userId);
     const isFollowing = followingIds.includes(userId);
-    const avatar = item.profilePictureUrl || item.avatarUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`;
+    const userName = item.fullName || item.name || item.username;
 
     return (
       <View style={styles.itemContainer}>
         <View style={styles.itemLeft}>
-          <Image source={{ uri: avatar }} style={styles.itemImage} />
+          <UserAvatar avatarUrl={item.profilePictureUrl || item.avatarUrl} name={userName} size={48} />
           <View style={styles.textContainer}>
-            <Text style={styles.itemName}>{item.fullName || item.name || 'User'}</Text>
+            <Text style={styles.itemName}>{userName || 'User'}</Text>
             <Text style={styles.itemUsername}>@{item.username || 'username'}</Text>
           </View>
         </View>

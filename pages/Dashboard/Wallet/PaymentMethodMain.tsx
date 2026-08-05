@@ -217,7 +217,10 @@ export default function PaymentMethodMain() {
 
                 // Step 3: Funding wallet
                 await stripeService.fundWallet(displayAmount, paymentMethodId);
-                router.push('/dashboard/wallet-success');
+                router.push({
+                   pathname: '/dashboard/wallet-success',
+                   params: { amount: displayAmount.toString() }
+                });
               } catch (err: any) {
                 Alert.alert('Payment Failed', err.response?.data?.message || err?.message || 'Transaction failed. Please try again.');
               } finally {

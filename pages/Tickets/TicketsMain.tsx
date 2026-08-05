@@ -114,7 +114,12 @@ export default function TicketsMain() {
                 style={styles.eTicketButton}
                 onPress={() => {
                   store.dispatch(setLastPurchase({ ticket: item }));
-                  router.push('/e-ticket');
+                  const eventId = event.id || event._id || item.eventId;
+                  const purchaseId = item.id || item._id || item.purchaseId;
+                  router.push({
+                    pathname: '/e-ticket',
+                    params: { eventId, purchaseId }
+                  });
                 }}
               >
                 <Text style={styles.eTicketButtonText}>E-Ticket</Text>
@@ -132,7 +137,12 @@ export default function TicketsMain() {
                 style={styles.eTicketButton}
                 onPress={() => {
                   store.dispatch(setLastPurchase({ ticket: item }));
-                  router.push('/e-ticket');
+                  const eventId = event.id || event._id || item.eventId;
+                  const purchaseId = item.id || item._id || item.purchaseId;
+                  router.push({
+                    pathname: '/e-ticket',
+                    params: { eventId, purchaseId }
+                  });
                 }}
               >
                 <Text style={styles.eTicketButtonText}>E-Ticket</Text>

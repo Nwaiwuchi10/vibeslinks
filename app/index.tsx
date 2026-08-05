@@ -23,12 +23,22 @@ export default function OnboardingRoute() {
   // the isAuthenticated flag will flip and we can react immediately.
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
 
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // If auth state flips to true at any point during the splash/onboarding flow, go to home
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/(tabs)' as any);
+    if (isMounted && isAuthenticated) {
+      // Small timeout to let root layout finish painting
+      const timer = setTimeout(() => {
+        router.replace('/(tabs)' as any);
+      }, 50);
+      return () => clearTimeout(timer);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isMounted]);
 
   const handleSplashFinish = async () => {
     try {

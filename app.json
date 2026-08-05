@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.nwaiwuchi10.vibeslinks",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/appicon.png",
@@ -58,7 +59,8 @@
       "router": {},
       "eas": {
         "projectId": "9b208e53-5efc-4ada-a2a9-c5593496120b"
-      }
+      },
+      "googleMapsGeocodingApiKey": "AIzaSyA95so4_aRUnfubUl3hzLmNkwkMkmNPZH4"
     },
     "updates": {
       "url": "https://u.expo.dev/9b208e53-5efc-4ada-a2a9-c5593496120b"

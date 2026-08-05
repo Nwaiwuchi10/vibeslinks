@@ -4,26 +4,30 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   Image,
   Dimensions,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
 const CreateEventStep1 = ({ onBack, onContinue }: { onBack: () => void, onContinue: (type: 'physical' | 'livestream') => void }) => {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const [selectedType, setSelectedType] = useState<'physical' | 'livestream'>('physical');
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.closeBtn} onPress={onBack}>
           <Ionicons name="close" size={24} color="#666" />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.illustrationContainer}>
            <Image 
              source={{ uri: 'https://img.freepik.com/free-vector/date-picker-concept-illustration_114360-1910.jpg' }} 
@@ -64,9 +68,9 @@ const CreateEventStep1 = ({ onBack, onContinue }: { onBack: () => void, onContin
             </View>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity style={styles.continueBtn} onPress={() => onContinue(selectedType)}>
           <Text style={styles.continueText}>Continue</Text>
         </TouchableOpacity>
@@ -81,7 +85,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   header: { paddingHorizontal: 20, paddingTop: 10, alignItems: 'flex-end' },
   closeBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center' },
-  content: { flex: 1, paddingHorizontal: 25, alignItems: 'center' },
+  scrollContent: { paddingHorizontal: 25, alignItems: 'center', paddingBottom: 40 },
   illustrationContainer: { width: '100%', height: 220, marginBottom: 40, marginTop: 20 },
   illustration: { width: '100%', height: '100%' },
   title: { fontSize: 24, fontWeight: '800', color: '#333', marginBottom: 12 },

@@ -4,17 +4,46 @@ import { setThreads, setMessages, updateThread, addMessage } from '@/store/slice
 
 export const chatService = {
   async getThreads(params?: { q?: string; type?: 'all' | 'direct' | 'host-event' | 'community'; eventId?: string }) {
-    const response = await apiClient.get('/chats/threads', { params });
-    const data = response.data;
-    const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-    store.dispatch(setThreads(items));
-    return items;
+    try {
+      let response;
+      try {
+        response = await apiClient.get('/chats', { params });
+      } catch {
+        response = await apiClient.get('/chats/threads', { params });
+      }
+      const data = response.data;
+      const items = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.threads)
+        ? data.threads
+        : Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
+      store.dispatch(setThreads(items));
+      return items;
+    } catch (err) {
+      console.warn('[chatService] getThreads error:', err);
+      return [];
+    }
   },
 
   async createDirectThread(recipientUserId: string) {
     const response = await apiClient.post('/chats/direct', { recipientUserId });
-    const thread = response.data;
-    store.dispatch(updateThread(thread));
+    const thread = response.data?.thread || response.data;
+    if (thread) {
+      store.dispatch(updateThread(thread));
+    }
+    return thread;
+  },
+
+  async createGroupThread(title: string, participantUserIds: string[]) {
+    const response = await apiClient.post('/chats/groups', { title, participantUserIds });
+    const thread = response.data?.thread || response.data;
+    if (thread) {
+      store.dispatch(updateThread(thread));
+    }
     return thread;
   },
 
@@ -36,7 +65,8 @@ export const chatService = {
 
   async getMessages(conversationId: string) {
     const response = await apiClient.get(`/chats/${conversationId}/messages`);
-    const messages = response.data?.items || response.data || [];
+    const data = response.data;
+    const messages = Array.isArray(data) ? data : Array.isArray(data?.messages) ? data.messages : Array.isArray(data?.items) ? data.items : [];
     store.dispatch(setMessages({ conversationId, messages }));
     return messages;
   },

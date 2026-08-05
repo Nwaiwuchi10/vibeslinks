@@ -1,22 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import { resolveImageUrl } from '@/services/apiClient';
+import { eventService } from '@/services/eventService';
+import { store } from '@/store';
+import { showToast } from '@/store/slices/toastSlice';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
-  Modal,
-  Image,
-  FlatList,
+  View,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCreateEvent } from './CreateEventContext';
-import { eventService } from '@/services/eventService';
-import { showToast } from '@/store/slices/toastSlice';
-import { store } from '@/store';
+
+const { width } = Dimensions.get('window');
 
 const CATEGORIES = ['club', 'concert', 'conference', 'festival', 'workshop', 'other'];
 const TIMEZONES = ['Africa/Lagos', 'UTC', 'GMT+1', 'EST', 'PST'];
@@ -37,21 +43,71 @@ const CreateEventStep2 = ({
   onContinue: () => void;
   onOpenDatePicker: () => void;
 }) => {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const { eventData, updateEventData } = useCreateEvent();
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTimezoneDropdown, setShowTimezoneDropdown] = useState(false);
   const [showArtistSelector, setShowArtistSelector] = useState(false);
   const [showImageSourcePicker, setShowImageSourcePicker] = useState(false);
-  
+
   const [availableArtists, setAvailableArtists] = useState<ArtistOption[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [customCoverUrl, setCustomCoverUrl] = useState(eventData.imageUrl);
+  const [showPresetsModal, setShowPresetsModal] = useState(false);
 
   // Custom typing inputs
   const [customCategoryText, setCustomCategoryText] = useState('');
   const [showCustomArtistForm, setShowCustomArtistForm] = useState(false);
   const [customArtistName, setCustomArtistName] = useState('');
   const [customArtistAvatar, setCustomArtistAvatar] = useState('');
+  const [uploadingArtistPic, setUploadingArtistPic] = useState(false);
+
+  const handlePickArtistImage = async (useCamera = false) => {
+    try {
+      let result;
+      if (useCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          store.dispatch(showToast({ type: 'error', message: 'Camera permission is required.' }));
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          store.dispatch(showToast({ type: 'error', message: 'Media library permission is required.' }));
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      }
+
+      if (!result.canceled && result.assets[0].uri) {
+        setUploadingArtistPic(true);
+        try {
+          const uploadedUrl = await eventService.uploadImage(result.assets[0].uri);
+          setCustomArtistAvatar(uploadedUrl);
+          store.dispatch(showToast({ type: 'success', message: 'Artist image uploaded successfully!' }));
+        } catch (err) {
+          console.warn('Artist picture upload failed:', err);
+          store.dispatch(showToast({ type: 'error', message: 'Failed to upload artist picture.' }));
+        } finally {
+          setUploadingArtistPic(false);
+        }
+      }
+    } catch (err) {
+      console.warn('Image picker error:', err);
+    }
+  };
 
   const handleSelectImage = async () => {
     setShowImageSourcePicker(false);
@@ -107,11 +163,14 @@ const CreateEventStep2 = ({
       try {
         const res = await eventService.getArtistOptions();
         const list = Array.isArray(res) ? res : res.artists || [];
-        setAvailableArtists(list.map((a: any) => ({
-          id: a.id || String(a.userId),
-          name: a.name || a.fullName || 'Artist',
-          avatarUrl: a.avatarUrl || a.profilePictureUrl || `https://i.pravatar.cc/150?img=${a.id || Math.floor(Math.random() * 50)}`,
-        })));
+        setAvailableArtists(list.map((a: any) => {
+          const rawUrl = a.avatarUrl || a.profilePictureUrl || null;
+          return {
+            id: a.id || String(a.userId || a._id),
+            name: a.name || a.fullName || a.username || 'Artist',
+            avatarUrl: resolveImageUrl(rawUrl) || 'https://i.pravatar.cc/150?img=12',
+          };
+        }));
       } catch (err) {
         console.warn('[CreateEventStep2] Failed to fetch artist options:', err);
       }
@@ -139,18 +198,21 @@ const CreateEventStep2 = ({
     return availableArtists.filter(a => ids.includes(a.id));
   };
 
-  const filteredArtists = availableArtists.filter(a => 
+  const filteredArtists = availableArtists.filter(a =>
     a.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const PRESET_COVERS = [
+    '',
+    'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800',
+    'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
+    '',
+    'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
+    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800'
+  ];
+
   const handleAddRandomCover = () => {
-    const randomCovers = [
-      'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800',
-      'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800',
-      'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
-      'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=800',
-    ];
-    const chosen = randomCovers[Math.floor(Math.random() * randomCovers.length)];
+    const chosen = PRESET_COVERS[Math.floor(Math.random() * PRESET_COVERS.length)];
     updateEventData({ imageUrl: chosen });
     setCustomCoverUrl(chosen);
   };
@@ -158,7 +220,7 @@ const CreateEventStep2 = ({
   const isFormValid = eventData.title.trim() && eventData.startsAt && eventData.venue.trim() && eventData.location.trim() && eventData.imageUrl;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Ionicons name="arrow-back" size={20} color="#000" />
@@ -169,29 +231,29 @@ const CreateEventStep2 = ({
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Title */}
         <Text style={styles.label}>Event Title <Text style={styles.required}>*</Text></Text>
-        <TextInput 
-          placeholder="e.g. Burna Boy Live in Lagos" 
-          style={styles.input} 
-          placeholderTextColor="#999" 
+        <TextInput
+          placeholder="e.g. Burna Boy Live in Lagos"
+          style={styles.input}
+          placeholderTextColor="#999"
           value={eventData.title}
           onChangeText={(text) => updateEventData({ title: text })}
         />
 
         {/* Description */}
         <Text style={styles.label}>Description</Text>
-        <TextInput 
-          placeholder="Describe your event..." 
-          style={[styles.input, styles.textArea]} 
-          multiline 
+        <TextInput
+          placeholder="Describe your event..."
+          style={[styles.input, styles.textArea]}
+          multiline
           placeholderTextColor="#999"
           value={eventData.description}
           onChangeText={(text) => updateEventData({ description: text })}
         />
-        
+
         {/* Category */}
         <Text style={styles.label}>Category</Text>
-        <TouchableOpacity 
-          style={[styles.input, styles.dropdown]} 
+        <TouchableOpacity
+          style={[styles.input, styles.dropdown]}
           onPress={() => setShowCategoryDropdown(true)}
         >
           <Text style={[styles.dropdownText, eventData.category && { color: '#333' }]}>
@@ -224,7 +286,7 @@ const CreateEventStep2 = ({
               <Text style={styles.addBtnText}>Manage Artists</Text>
             </TouchableOpacity>
           </View>
-          
+
           {getSelectedArtists().length > 0 ? (
             <View style={styles.selectedArtistsRow}>
               {getSelectedArtists().map(artist => (
@@ -261,8 +323,8 @@ const CreateEventStep2 = ({
 
         {/* Time Zone */}
         <Text style={styles.label}>Time Zone</Text>
-        <TouchableOpacity 
-          style={[styles.input, styles.dropdown]} 
+        <TouchableOpacity
+          style={[styles.input, styles.dropdown]}
           onPress={() => setShowTimezoneDropdown(true)}
         >
           <Text style={[styles.dropdownText, eventData.timezone && { color: '#333' }]}>
@@ -273,7 +335,7 @@ const CreateEventStep2 = ({
 
         {/* Cover Image */}
         <Text style={styles.label}>Event Cover Image <Text style={styles.required}>*</Text></Text>
-        
+
         {eventData.imageUrl ? (
           <View style={styles.coverPreviewContainer}>
             <Image source={{ uri: eventData.imageUrl }} style={styles.coverPreview} />
@@ -290,40 +352,40 @@ const CreateEventStep2 = ({
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.randomCoverBtn} onPress={handleAddRandomCover}>
-          <Ionicons name="image-outline" size={18} color="#8E2DE2" style={{ marginRight: 6 }} />
-          <Text style={styles.randomCoverBtnText}>Generate Random Beautiful Cover</Text>
+        <TouchableOpacity style={styles.randomCoverBtn} onPress={() => setShowPresetsModal(true)}>
+          <Ionicons name="images-outline" size={18} color="#8E2DE2" style={{ marginRight: 6 }} />
+          <Text style={styles.randomCoverBtnText}>Choose from Preset Beautiful Covers</Text>
         </TouchableOpacity>
 
         {/* Venue Info */}
         <View style={styles.venueSection}>
           <Text style={styles.sectionLabel}>Venue Details</Text>
-          
+
           <Text style={styles.label}>Venue Name <Text style={styles.required}>*</Text></Text>
-          <TextInput 
-            placeholder="e.g. Eko Hotel Convention Centre" 
-            style={styles.whiteInput} 
-            placeholderTextColor="#999" 
+          <TextInput
+            placeholder="e.g. Eko Hotel Convention Centre"
+            style={styles.whiteInput}
+            placeholderTextColor="#999"
             value={eventData.venue}
             onChangeText={(text) => updateEventData({ venue: text })}
           />
 
           <Text style={styles.label}>Address / Location <Text style={styles.required}>*</Text></Text>
-          <TextInput 
-            placeholder="e.g. Victoria Island, Lagos" 
-            style={styles.whiteInput} 
-            placeholderTextColor="#999" 
+          <TextInput
+            placeholder="e.g. Victoria Island, Lagos"
+            style={styles.whiteInput}
+            placeholderTextColor="#999"
             value={eventData.location}
             onChangeText={(text) => updateEventData({ location: text })}
           />
 
           <View style={styles.capacityRow}>
             <Text style={styles.capacityLabel}>Venue capacity</Text>
-            <TextInput 
-              placeholder="e.g. 5000" 
-              style={styles.capacityInput} 
-              keyboardType="numeric" 
-              placeholderTextColor="#999" 
+            <TextInput
+              placeholder="e.g. 5000"
+              style={styles.capacityInput}
+              keyboardType="numeric"
+              placeholderTextColor="#999"
               value={eventData.totalCapacity > 0 ? eventData.totalCapacity.toString() : ''}
               onChangeText={(text) => updateEventData({ totalCapacity: parseInt(text, 10) || 0 })}
             />
@@ -334,14 +396,14 @@ const CreateEventStep2 = ({
       </ScrollView>
 
       {/* Footer */}
-      <View style={styles.footer}>
-         <TouchableOpacity 
-           style={[styles.continueBtn, !isFormValid && styles.continueBtnDisabled]} 
-           onPress={onContinue}
-           disabled={!isFormValid}
-         >
-           <Text style={styles.continueText}>Continue</Text>
-         </TouchableOpacity>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomPad }]}>
+        <TouchableOpacity
+          style={[styles.continueBtn, !isFormValid && styles.continueBtnDisabled]}
+          onPress={onContinue}
+          disabled={!isFormValid}
+        >
+          <Text style={styles.continueText}>Continue</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Category Modal */}
@@ -411,7 +473,7 @@ const CreateEventStep2 = ({
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
             {showCustomArtistForm ? (
               <ScrollView contentContainerStyle={{ padding: 20 }}>
                 <Text style={styles.label}>Artist Name</Text>
@@ -422,17 +484,45 @@ const CreateEventStep2 = ({
                   value={customArtistName}
                   onChangeText={setCustomArtistName}
                 />
-                
-                <Text style={styles.label}>Artist Picture URL</Text>
+
+                <Text style={styles.label}>Artist Picture</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16, alignItems: 'center' }}>
+                  {customArtistAvatar ? (
+                    <Image source={{ uri: customArtistAvatar }} style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#EEE' }} />
+                  ) : (
+                    <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#EEE', justifyContent: 'center', alignItems: 'center' }}>
+                      <Ionicons name="person-outline" size={24} color="#999" />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, backgroundColor: '#F0F0F0', paddingVertical: 10, borderRadius: 8, alignItems: 'center' }}
+                      onPress={() => handlePickArtistImage(false)}
+                      disabled={uploadingArtistPic}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#333' }}>Choose Photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ flex: 1, backgroundColor: '#F0F0F0', paddingVertical: 10, borderRadius: 8, alignItems: 'center' }}
+                      onPress={() => handlePickArtistImage(true)}
+                      disabled={uploadingArtistPic}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#333' }}>Take Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {uploadingArtistPic && (
+                  <ActivityIndicator size="small" color="#8E2DE2" style={{ marginBottom: 12 }} />
+                )}
                 <TextInput
-                  placeholder="https://example.com/artist.png"
+                  placeholder="Or paste picture URL directly..."
                   style={styles.input}
                   placeholderTextColor="#999"
                   value={customArtistAvatar}
                   onChangeText={setCustomArtistAvatar}
                 />
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.addBtn, { paddingVertical: 14, alignItems: 'center', marginTop: 10 }]}
                   onPress={() => {
                     if (!customArtistName.trim()) {
@@ -447,7 +537,7 @@ const CreateEventStep2 = ({
                     };
                     setAvailableArtists(prev => [newArtist, ...prev]);
                     handleToggleArtist(newArtistId);
-                    
+
                     // Reset custom inputs
                     setCustomArtistName('');
                     setCustomArtistAvatar('');
@@ -482,10 +572,10 @@ const CreateEventStep2 = ({
                       >
                         <Image source={{ uri: item.avatarUrl }} style={styles.artistSelectAvatar} />
                         <Text style={styles.artistSelectName}>{item.name}</Text>
-                        <Ionicons 
-                          name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
-                          size={24} 
-                          color={isSelected ? "#8E2DE2" : "#DDD"} 
+                        <Ionicons
+                          name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                          size={24}
+                          color={isSelected ? "#8E2DE2" : "#DDD"}
                         />
                       </TouchableOpacity>
                     );
@@ -497,7 +587,7 @@ const CreateEventStep2 = ({
               </>
             )}
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.closeModalBtn}
               onPress={() => setShowArtistSelector(false)}
             >
@@ -523,6 +613,42 @@ const CreateEventStep2 = ({
                 <Ionicons name="camera-outline" size={22} color="#333" style={{ marginRight: 12 }} />
                 <Text style={styles.modalOptionText}>Take a Photo</Text>
               </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalOption} onPress={() => { setShowImageSourcePicker(false); setShowPresetsModal(true); }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="sparkles-outline" size={22} color="#333" style={{ marginRight: 12 }} />
+                <Text style={styles.modalOptionText}>Select Preset Cover Image</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Presets Modal */}
+      <Modal visible={showPresetsModal} transparent animationType="slide" onRequestClose={() => setShowPresetsModal(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPresetsModal(false)}>
+          <View style={[styles.modalSheet, { maxHeight: '60%' }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Choose Preset Cover</Text>
+
+            <ScrollView contentContainerStyle={{ padding: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+              {PRESET_COVERS.map((url, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={{ width: (width - 64) / 2, height: 100, borderRadius: 12, overflow: 'hidden' }}
+                  onPress={() => {
+                    updateEventData({ imageUrl: url });
+                    setCustomCoverUrl(url);
+                    setShowPresetsModal(false);
+                  }}
+                >
+                  <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowPresetsModal(false)}>
+              <Text style={styles.closeModalBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -571,7 +697,7 @@ const styles = StyleSheet.create({
   continueBtn: { backgroundColor: '#7F36FF', height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 2 },
   continueBtnDisabled: { opacity: 0.5 },
   continueText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
-  
+
   // Modal layout
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, paddingBottom: 30, maxHeight: '60%' },
@@ -581,7 +707,7 @@ const styles = StyleSheet.create({
   modalOptionSelected: { backgroundColor: '#F8F3FF' },
   modalOptionText: { fontSize: 15, color: '#333' },
   modalOptionTextSelected: { color: '#8E2DE2', fontWeight: '600' },
-  
+
   // Search bar
   searchBarWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 12, marginHorizontal: 20, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, fontSize: 14, color: '#333' },
@@ -592,7 +718,7 @@ const styles = StyleSheet.create({
   emptyArtistsText: { color: '#999', fontSize: 13, textAlign: 'center', padding: 20 },
   closeModalBtn: { backgroundColor: '#7F36FF', height: 50, borderRadius: 25, marginHorizontal: 20, justifyContent: 'center', alignItems: 'center', marginTop: 15 },
   closeModalBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  
+
   // Image Preview & Upload Cover Styles
   coverPreviewContainer: { width: '100%', height: 180, borderRadius: 20, overflow: 'hidden', marginBottom: 15, position: 'relative' },
   coverPreview: { width: '100%', height: '100%' },

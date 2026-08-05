@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     FlatList,
     Image,
@@ -7,25 +7,69 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
+import { eventService } from '@/services/eventService';
+import { resolveImageUrl } from '@/services/apiClient';
 
-const FRIENDS = [
-    { id: '1', name: 'Sophia Carter', avatar: 'https://i.pravatar.cc/150?img=32' },
-    { id: '2', name: 'Malik Johnson', avatar: 'https://i.pravatar.cc/150?img=12' },
-    { id: '3', name: 'Elena Rossi', avatar: 'https://i.pravatar.cc/150?img=45' },
-    { id: '4', name: 'Hiroshi Tanaka', avatar: 'https://i.pravatar.cc/150?img=52' },
-    { id: '5', name: 'Amina Yusuf', avatar: 'https://i.pravatar.cc/150?img=49' },
-    { id: '6', name: 'Diego Morales', avatar: 'https://i.pravatar.cc/150?img=68' },
-    { id: '7', name: 'Priya Sharma', avatar: 'https://i.pravatar.cc/150?img=41' },
-];
+interface FriendAttending {
+    id: string;
+    name: string;
+    avatar: string;
+}
+
+import { navigateToUserProfile } from '@/utils/profileNavigation';
+import { useAppSelector } from '@/store/hooks';
 
 const FriendsVibingScreen = () => {
-    const renderItem = ({ item }: { item: typeof FRIENDS[0] }) => (
-        <TouchableOpacity style={styles.friendItem} activeOpacity={0.7}>
+    const currentUser = useAppSelector((state) => state.auth?.user);
+    const currentUserId = currentUser?.id || currentUser?._id;
+    const { eventId } = useLocalSearchParams<{ eventId?: string }>();
+    const [friends, setFriends] = useState<FriendAttending[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function fetchFriends() {
+            if (!eventId) {
+                setLoading(false);
+                return;
+            }
+            try {
+                const data = await eventService.getEventFriendsAttending(eventId);
+                if (isMounted) {
+                    const items = Array.isArray(data) ? data : data?.items || [];
+                    const mapped = items.map((f: any, idx: number) => {
+                        const user = f.user || f;
+                        return {
+                            id: user.id || user._id || String(idx),
+                            name: user.fullName || user.name || user.username || 'Friend',
+                            avatar: resolveImageUrl(user.profilePictureUrl || user.avatarUrl || null) || `https://i.pravatar.cc/150?img=${(idx % 50) + 10}`,
+                        };
+                    });
+                    setFriends(mapped);
+                }
+            } catch (err) {
+                console.warn('[FriendsVibingScreen] error fetching friends attending:', err);
+            } finally {
+                if (isMounted) setLoading(false);
+            }
+        }
+
+        fetchFriends();
+        return () => { isMounted = false; };
+    }, [eventId]);
+
+    const renderItem = ({ item }: { item: FriendAttending }) => (
+        <TouchableOpacity
+            style={styles.friendItem}
+            activeOpacity={0.7}
+            onPress={() => navigateToUserProfile(router, item, currentUserId)}
+        >
             <Image source={{ uri: item.avatar }} style={styles.avatar} />
             <Text style={styles.friendName}>{item.name}</Text>
             <TouchableOpacity style={styles.iconButton}>
@@ -48,18 +92,33 @@ const FriendsVibingScreen = () => {
                 </View>
             </View>
 
-            <FlatList
-                data={FRIENDS}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-            />
+            {loading ? (
+                <View style={styles.centerContainer}>
+                    <ActivityIndicator size="large" color="#8E2DE2" />
+                </View>
+            ) : friends.length === 0 ? (
+                <View style={styles.centerContainer}>
+                    <MaterialCommunityIcons name="account-multiple-outline" size={48} color="#CCC" />
+                    <Text style={styles.emptyText}>No friends attending this event yet.</Text>
+                </View>
+            ) : (
+                <FlatList
+                    data={friends}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                    ItemSeparatorComponent={() => <View style={styles.separator} />}
+                />
+            )}
 
             {/* Bottom Button Area */}
             <View style={styles.bottomContainer}>
-                <TouchableOpacity style={styles.buyButton} activeOpacity={0.8} onPress={() => router.push('/event-details')}>
+                <TouchableOpacity
+                    style={styles.buyButton}
+                    activeOpacity={0.8}
+                    onPress={() => eventId ? router.push({ pathname: '/event-details', params: { id: eventId } }) : router.push('/event-details')}
+                >
                     <Text style={styles.buyButtonText}>Buy Tickets</Text>
                 </TouchableOpacity>
             </View>
@@ -151,6 +210,19 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#F0F0F0',
         marginVertical: 4,
+    },
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+        paddingBottom: 120,
+    },
+    emptyText: {
+        color: '#999',
+        fontSize: 15,
+        marginTop: 12,
+        textAlign: 'center',
     },
     bottomContainer: {
         position: 'absolute',

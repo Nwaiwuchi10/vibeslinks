@@ -15,6 +15,9 @@ import { Audio } from 'expo-av';
 import ToastContainer from '@/components/ui/Toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
+import { notificationService } from '@/services/notificationService';
+import { Platform } from 'react-native';
+
 const TOKEN_KEY = 'vibezlink_access_token';
 const USER_KEY = 'vibezlink_user_info';
 
@@ -54,6 +57,9 @@ function AppContent() {
   useEffect(() => {
     if (isAuthenticated && token) {
       socketService.connect(token, user?.id);
+      // Register device for push notifications
+      const osPlatform = Platform.OS === 'ios' ? 'ios' : 'android';
+      notificationService.registerDevice(`device-token-${user?.id || 'vibez'}`, osPlatform);
     } else {
       socketService.disconnect();
     }
@@ -66,7 +72,9 @@ function AppContent() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="(auth)/signup" />
+        <Stack.Screen name="(auth)/reset-password" />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal', headerShown: true }} />
       </Stack>
       <StatusBar style="auto" />

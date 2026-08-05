@@ -15,16 +15,21 @@ import {
     View,
     ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import { eventService } from '@/services/eventService';
 import { userService } from '@/services/userService';
+import { socketService } from '@/services/socketService';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { addCommentToState, setComments } from '@/store/slices/eventSlice';
+import { navigateToUserProfile } from '@/utils/profileNavigation';
 
 const { width } = Dimensions.get('window');
 
 const EventDetails = () => {
+    const insets = useSafeAreaInsets();
+    const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : Math.max(insets.bottom, 20);
     const { id } = useLocalSearchParams<{ id?: string }>();
     const dispatch = useDispatch();
     const [loading, setLoading] = useState(true);
@@ -34,10 +39,12 @@ const EventDetails = () => {
     const event = useSelector((state: RootState) => state.event.currentEvent);
     const commentsList = useSelector((state: RootState) => state.event.comments);
     const authUser = useSelector((state: RootState) => state.auth.user);
+    const currentUserId = authUser?.id || authUser?._id;
 
     const [friendsAttending, setFriendsAttending] = useState<any[]>([]);
     const [userReaction, setUserReaction] = useState<string | null>(null);
     const [isFollowingHost, setIsFollowingHost] = useState(false);
+    const [otherEvents, setOtherEvents] = useState<any[]>([]);
 
     useEffect(() => {
         if (!id) return;
@@ -46,7 +53,6 @@ const EventDetails = () => {
                 setLoading(true);
                 const res = await eventService.getEventDetailsScreen(id!);
                 
-                // Set initial reaction if returned in details
                 const detailEvent = res?.event || res;
                 if (detailEvent?.userReaction) {
                     setUserReaction(detailEvent.userReaction);
@@ -63,6 +69,14 @@ const EventDetails = () => {
                     const friends = await eventService.getEventFriendsAttending(id!);
                     setFriendsAttending(friends || []);
                 } catch {}
+
+                try {
+                    const allEvs = await eventService.getAllEvents();
+                    if (allEvs) {
+                        setOtherEvents(allEvs.filter((e: any) => (e.id || e._id) !== id).slice(0, 4));
+                    }
+                } catch {}
+
             } catch (err) {
                 console.warn('[EventDetails] Fetch failed:', err);
             } finally {
@@ -71,6 +85,33 @@ const EventDetails = () => {
         }
         fetchDetails();
     }, [id]);
+
+    useEffect(() => {
+        if (!id) return;
+        
+        socketService.joinRoom(`event:${id}`);
+        
+        const handleCommentCreated = (newComment: any) => {
+            if (newComment && (newComment.eventId === id || newComment.event === id)) {
+                dispatch(addCommentToState(newComment));
+            }
+        };
+
+        const handleTicketPurchased = (data: any) => {
+            console.log('[EventDetails] Real-time ticket purchase event:', data);
+        };
+
+        socketService.on('event:comment.created', handleCommentCreated);
+        socketService.on('event:ticket.purchased', handleTicketPurchased);
+        socketService.on('event:attendee.joined', handleTicketPurchased);
+
+        return () => {
+            socketService.leaveRoom(`event:${id}`);
+            socketService.off('event:comment.created', handleCommentCreated);
+            socketService.off('event:ticket.purchased', handleTicketPurchased);
+            socketService.off('event:attendee.joined', handleTicketPurchased);
+        };
+    }, [id, dispatch]);
 
     const handleFollowHostToggle = async () => {
         const hostObj = event?.organizer?.host || event?.organizer || event?.host || event?.creator || event?.user;
@@ -138,7 +179,7 @@ const EventDetails = () => {
         );
     }
 
-    const heroImage = event.hero?.imageUrl || event.imageUrl || '';
+    const heroImage = event.hero?.imageUrl || event.imageUrl || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800';
     const title = event.summary?.title || event.title || 'Untitled Event';
     const category = event.summary?.categoryLabel || event.category || 'Event';
     const location = event.summary?.locationText || event.location || 'TBD';
@@ -160,7 +201,7 @@ const EventDetails = () => {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {/* Header Image Section */}
                 <ImageBackground
-                    source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')}
+                    source={{ uri: heroImage }}
                     style={styles.headerImage}
                 >
                     <LinearGradient
@@ -264,14 +305,30 @@ const EventDetails = () => {
                             <Text style={styles.sectionTitle}>Organizer</Text>
                         </View>
                         <View style={styles.hostCard}>
-                            <Image 
-                                source={host.avatarUrl ? { uri: host.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${host.username}` }} 
-                                style={styles.hostAvatar} 
-                            />
-                            <View style={{ flex: 1, marginLeft: 12 }}>
-                                <Text style={styles.hostLabel}>Hosted by</Text>
-                                <Text style={styles.hostName}>{host.name}</Text>
-                            </View>
+                            <TouchableOpacity 
+                                style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                                activeOpacity={0.8}
+                                onPress={() => router.push({
+                                    pathname: '/host-profile',
+                                    params: {
+                                        id: host.id || host._id || '',
+                                        name: host.name || host.username || '',
+                                        avatar: host.avatarUrl || host.profilePictureUrl || ''
+                                    }
+                                })}
+                            >
+                                <Image 
+                                    source={host.avatarUrl ? { uri: host.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${host.username}` }} 
+                                    style={styles.hostAvatar} 
+                                />
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={styles.hostLabel}>Hosted by</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={styles.hostName}>{host.name}</Text>
+                                        <MaterialIcons name="verified" size={14} color={Colors.primary} style={{ marginLeft: 4 }} />
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
                             <TouchableOpacity 
                                 style={[styles.followButton, isFollowingHost && styles.followingButton]}
                                 onPress={handleFollowHostToggle}
@@ -284,17 +341,18 @@ const EventDetails = () => {
                     </View>
 
                     {/* Map Placement */}
-                    {event.directions?.map && (
-                        <View style={styles.mapContainer}>
-                            <Image source={require('../../assets/images/staticMap.png')} style={styles.mapImage} />
-                            <View style={styles.mapOverlay}>
-                                <View style={styles.mapPin}>
-                                    <Ionicons name="location" size={24} color="#FFF" />
-                                </View>
+                    <TouchableOpacity 
+                        style={styles.mapContainer}
+                        onPress={() => router.push({ pathname: '/get-direction', params: { eventId: id } })}
+                    >
+                        <Image source={require('../../assets/images/staticMap.png')} style={styles.mapImage} />
+                        <View style={styles.mapOverlay}>
+                            <View style={styles.mapPin}>
+                                <Ionicons name="location" size={24} color="#FFF" />
                             </View>
-                            <Text style={styles.mapAddress}>{event.directions.addressLabel || location}</Text>
                         </View>
-                    )}
+                        <Text style={styles.mapAddress}>{location}</Text>
+                    </TouchableOpacity>
 
                     {/* Featured Artists */}
                     {artists.length > 0 && (
@@ -322,7 +380,7 @@ const EventDetails = () => {
                                 {tickets.map((t: any) => (
                                     <View key={t.id} style={styles.ticketCard}>
                                         <ImageBackground 
-                                            source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')} 
+                                            source={{ uri: heroImage }} 
                                             style={styles.ticketImgBg} 
                                             imageStyle={{ borderRadius: 16 }}
                                         >
@@ -353,7 +411,7 @@ const EventDetails = () => {
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Event Start In</Text>
                             <ImageBackground 
-                                source={heroImage ? { uri: heroImage } : require('../../assets/images/burna_boy.png')} 
+                                source={{ uri: heroImage }} 
                                 style={styles.timerBg} 
                                 imageStyle={{ borderRadius: 16 }}
                             >
@@ -388,41 +446,97 @@ const EventDetails = () => {
                         </View>
                         <View style={styles.commentInputRow}>
                             <TextInput 
-                                placeholder="Leave a comment" 
+                                placeholder="leave a comment..." 
                                 style={styles.commentInput} 
                                 value={commentText}
                                 onChangeText={setCommentText}
+                                placeholderTextColor="#A0A0A0"
                             />
                             <TouchableOpacity style={styles.sendButton} onPress={handleAddComment} disabled={submittingComment}>
-                                {submittingComment ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send" size={16} color="#FFF" />}
+                                {submittingComment ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="arrow-up" size={16} color="#FFF" />}
                             </TouchableOpacity>
                         </View>
 
-                        {commentsList.slice(0, 3).map((item: any, idx: number) => {
+                        {commentsList.map((item: any, idx: number) => {
                             const author = item.user || { name: 'User', username: 'user', avatarUrl: null };
                             return (
                                 <View key={idx} style={styles.commentItem}>
-                                    <Image 
-                                        source={author.avatarUrl ? { uri: author.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${author.username}` }} 
-                                        style={styles.commentAvatar} 
-                                    />
+                                    <TouchableOpacity onPress={() => navigateToUserProfile(router, author, currentUserId)} activeOpacity={0.8}>
+                                        <Image 
+                                            source={author.avatarUrl ? { uri: author.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${author.username}` }} 
+                                            style={styles.commentAvatar} 
+                                        />
+                                    </TouchableOpacity>
                                     <View style={{ flex: 1 }}>
                                         <View style={styles.commentHeader}>
-                                            <Text style={styles.commentUser}>
-                                                {author.name} <Text style={styles.commentTime}>. {new Date(item.createdAt).toLocaleDateString()}</Text>
-                                            </Text>
+                                            <TouchableOpacity onPress={() => navigateToUserProfile(router, author, currentUserId)} activeOpacity={0.8}>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                    <Text style={styles.commentUser}>{author.name}</Text>
+                                                    <MaterialIcons name="verified" size={12} color={Colors.primary} style={{ marginLeft: 4 }} />
+                                                </View>
+                                            </TouchableOpacity>
+                                            <Text style={styles.commentTime}> . {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '1h'}</Text>
+                                            <TouchableOpacity>
+                                                <Ionicons name="ellipsis-horizontal" size={14} color="#888" />
+                                            </TouchableOpacity>
                                         </View>
                                         <Text style={styles.commentText}>{item.message}</Text>
+                                        
+                                        {/* Comment Actions / Nested Replies */}
+                                        <View style={styles.commentActions}>
+                                            <TouchableOpacity style={styles.commentAction}>
+                                                <Ionicons name="heart-outline" size={14} color="#666" />
+                                                <Text style={styles.actionCount}>42</Text>
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                 </View>
                             );
                         })}
                     </View>
+
+                    {/* Other Events You May Like */}
+                    {otherEvents.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>other events you may like</Text>
+                            {otherEvents.map((item: any) => {
+                                const evId = item.id || item._id;
+                                const evImg = item.imageUrl || item.hero?.imageUrl || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300';
+                                const evTitle = item.title || 'Event';
+                                const evLocation = item.location || 'Lekki , Lagos Nigeria';
+                                const evPrice = item.ticketPricing?.tiers?.[0]?.price ?? item.price ?? 'Free';
+                                const evCategory = item.category || 'Nightlife';
+                                return (
+                                    <TouchableOpacity 
+                                        key={evId} 
+                                        style={styles.otherEventRow}
+                                        onPress={() => router.push({ pathname: '/event-details', params: { id: evId } })}
+                                    >
+                                        <Image source={{ uri: evImg }} style={styles.otherEventImg} />
+                                        <View style={styles.otherEventInfo}>
+                                            <View style={styles.otherBadge}>
+                                                <Text style={styles.otherBadgeText}>{evCategory.toUpperCase()}</Text>
+                                            </View>
+                                            <Text style={styles.otherTitle} numberOfLines={1}>{evTitle}</Text>
+                                            <View style={styles.otherLocRow}>
+                                                <Ionicons name="location" size={12} color="#8E2DE2" />
+                                                <Text style={styles.otherLoc} numberOfLines={1}>{evLocation}</Text>
+                                            </View>
+                                            <Text style={styles.otherPrice}>
+                                                {typeof evPrice === 'number' ? `₦${evPrice.toLocaleString()}` : evPrice}
+                                                <Text style={{ fontSize: 10, color: '#888', fontWeight: 'normal' }}> /Person</Text>
+                                            </Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
                 </View>
             </ScrollView>
 
             {/* Bottom Purchase Bar */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: bottomPad }]}>
                 <View>
                     <Text style={styles.bottomLabel}>Price</Text>
                     <Text style={styles.bottomPrice}>{event.stickyPurchase?.priceText || '₦'}</Text>
@@ -446,7 +560,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFF',
     },
     scrollContent: {
-        paddingBottom: 20,
+        paddingBottom: 150, // Fix scroll cut off completely!
     },
     headerImage: {
         width: '100%',
@@ -490,6 +604,8 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: '900',
         color: '#1A1A2E',
+        flex: 1,
+        marginRight: 10,
     },
     nightlifeBadge: {
         backgroundColor: '#000',
@@ -552,11 +668,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#1A1A2E',
     },
-    viewInviteText: {
-        fontSize: 13,
-        color: Colors.primary,
-        fontWeight: '700',
-    },
     section: {
         paddingHorizontal: 20,
         marginBottom: 24,
@@ -572,20 +683,10 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#1A1A2E',
     },
-    readMoreText: {
-        fontSize: 12,
-        color: '#888',
-        fontWeight: '600',
-    },
     description: {
         fontSize: 14,
         color: '#6B6B80',
         lineHeight: 22,
-    },
-    aboutHostText: {
-        fontSize: 12,
-        color: Colors.primary,
-        fontWeight: '600',
     },
     hostCard: {
         flexDirection: 'row',
@@ -688,14 +789,6 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#1A1A2E',
     },
-    popBadge: {
-        marginTop: 4,
-        alignSelf: 'flex-start',
-    },
-    popText: {
-        fontSize: 11,
-        color: '#888',
-    },
     ticketScroll: {
         marginTop: 12,
     },
@@ -793,11 +886,6 @@ const styles = StyleSheet.create({
         marginTop: 4,
         fontWeight: '700',
     },
-    viewAllComments: {
-        fontSize: 12,
-        color: Colors.primary,
-        fontWeight: '600',
-    },
     commentInputRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -832,6 +920,7 @@ const styles = StyleSheet.create({
     commentHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 4,
     },
     commentUser: {
@@ -863,23 +952,7 @@ const styles = StyleSheet.create({
         color: '#888',
         marginLeft: 4,
     },
-    replyItem: {
-        flexDirection: 'row',
-        marginTop: 16,
-        paddingLeft: 12,
-        borderLeftWidth: 1,
-        borderLeftColor: '#EFEFEF',
-    },
-    replyAvatar: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        marginRight: 8,
-    },
-    otherEventsList: {
-        marginTop: 12,
-    },
-    otherEventCard: {
+    otherEventRow: {
         flexDirection: 'row',
         backgroundColor: '#FFF',
         borderRadius: 20,
@@ -955,11 +1028,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '900',
         color: Colors.primary,
-    },
-    bottomSub: {
-        fontSize: 12,
-        color: '#888',
-        fontWeight: '400',
     },
     buyButton: {
         backgroundColor: Colors.primary,

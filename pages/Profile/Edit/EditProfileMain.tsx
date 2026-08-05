@@ -4,12 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -49,8 +50,9 @@ const avatarStyles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
 export default function EditProfileMain() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
@@ -124,7 +126,7 @@ export default function EditProfileMain() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" />
       
       {/* Header */}
@@ -255,7 +257,7 @@ export default function EditProfileMain() {
       </ScrollView>
 
       {/* Fixed Bottom Button */}
-      <View style={styles.bottomContainer}>
+      <View style={[styles.bottomContainer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity style={styles.updateButton} onPress={handleUpdate} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#FFF" />

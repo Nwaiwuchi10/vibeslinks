@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,56 @@ import {
   ScrollView,
   SafeAreaView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { eventService } from '@/services/eventService';
+import { useRouter } from 'expo-router';
 
-const RECENT_SEARCH = ['Music Event', 'Dance Event', 'Business Event'];
+const DiscoverSearchScreen = ({
+  onBack,
+  onSearchSubmit,
+}: {
+  onBack: () => void;
+  onSearchSubmit: (q: string) => void;
+}) => {
+  const router = useRouter();
+  const [searchText, setSearchText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [recentSearches, setRecentSearches] = useState<any[]>([]);
+  const [recentViews, setRecentViews] = useState<any[]>([]);
 
-const RECENT_VIEW = [
-  { id: '1', title: 'Worship De King', location: 'Lekki Ikata, Lagos', price: '15,000', tag: 'FESTIVALS', image: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=1000' },
-  { id: '2', title: 'Afro Summer Festival', location: 'Lekki Ikata, Lagos', price: '80,000', tag: 'SPORTS EVENTS', image: 'https://images.unsplash.com/photo-1514525253361-bee8d4884c6c?q=80&w=1000' },
-];
+  const loadData = async () => {
+    try {
+      const data = await eventService.getEventSearchScreen();
+      setRecentSearches(data.recentSearches || []);
+      setRecentViews(data.recentViews || []);
+    } catch (e) {
+      console.warn('[DiscoverSearchScreen] load error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-const DiscoverSearchScreen = ({ onBack, onSearchSubmit }: { onBack: () => void, onSearchSubmit: (q: string) => void }) => {
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleDeleteSearch = async (searchId: string) => {
+    try {
+      await eventService.deleteRecentSearch(searchId);
+      setRecentSearches((prev) => prev.filter((item) => item.id !== searchId));
+    } catch (e) {
+      console.warn('Error deleting search:', e);
+    }
+  };
+
+  const handleSearchKeyPress = () => {
+    if (searchText.trim()) {
+      onSearchSubmit(searchText.trim());
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -27,41 +66,86 @@ const DiscoverSearchScreen = ({ onBack, onSearchSubmit }: { onBack: () => void, 
         </TouchableOpacity>
         <View style={styles.searchBar}>
           <TextInput
-            placeholder="type text"
+            placeholder="Search events, artists, venues..."
             placeholderTextColor="#8A8A8A"
             style={styles.input}
+            value={searchText}
+            onChangeText={setSearchText}
             autoFocus
+            returnKeyType="search"
+            onSubmitEditing={handleSearchKeyPress}
           />
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleSearchKeyPress}>
             <Ionicons name="search" size={20} color="#000" />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionTitle}>Recent Search</Text>
-        {RECENT_SEARCH.map((item, idx) => (
-          <TouchableOpacity key={idx} style={styles.recentItem} onPress={() => onSearchSubmit(item)}>
-            <Text style={styles.recentText}>{item}</Text>
-            <TouchableOpacity>
-              <Ionicons name="close" size={18} color="#8A8A8A" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        ))}
+      {loading ? (
+        <ActivityIndicator color="#8E2DE2" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {recentSearches.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Recent Search</Text>
+              {recentSearches.map((item) => (
+                <View key={item.id} style={styles.recentItemContainer}>
+                  <TouchableOpacity
+                    style={styles.recentItemBtn}
+                    onPress={() => onSearchSubmit(item.query)}
+                  >
+                    <Text style={styles.recentText}>{item.query}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteSearch(item.id)}>
+                    <Ionicons name="close" size={18} color="#8A8A8A" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
 
-        <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Recent View</Text>
-        {RECENT_VIEW.map((event) => (
-          <TouchableOpacity key={event.id} style={styles.eventCard}>
-            <Image source={{ uri: event.image }} style={styles.eventImage} />
-            <View style={styles.eventContent}>
-              <View style={styles.eventTag}><Text style={styles.eventTagText}>{event.tag}</Text></View>
-              <Text style={styles.eventName}>{event.title}</Text>
-              <View style={styles.eventLoc}><Ionicons name="location" size={12} color="#8E2DE2" /><Text style={styles.eventLocText}>{event.location}</Text></View>
-              <Text style={styles.eventPrice}>₦{event.price} <Text style={styles.priceSub}>/Person</Text></Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+          {recentViews.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Recent View</Text>
+              {recentViews.map((event) => {
+                const coverUri = event.imageUrl || event.coverImageUrl || event.eventPosterUrl;
+                return (
+                  <TouchableOpacity
+                    key={event.id}
+                    style={styles.eventCard}
+                    onPress={() => event.id && router.push({ pathname: '/event-details', params: { id: event.id } })}
+                  >
+                    {coverUri ? (
+                      <Image source={{ uri: coverUri }} style={styles.eventImage} />
+                    ) : (
+                      <Image source={require('../../assets/images/paint.png')} style={styles.eventImage} />
+                    )}
+                    <View style={styles.eventContent}>
+                      {event.category && (
+                        <View style={styles.eventTag}>
+                          <Text style={styles.eventTagText}>{String(event.category).toUpperCase()}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.eventName}>{event.title}</Text>
+                      {event.location && (
+                        <View style={styles.eventLoc}>
+                          <Ionicons name="location" size={12} color="#8E2DE2" />
+                          <Text style={styles.eventLocText}>{event.location}</Text>
+                        </View>
+                      )}
+                      {event.priceText && (
+                        <Text style={styles.eventPrice}>
+                          {event.priceText} <Text style={styles.priceSub}>/Person</Text>
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -76,7 +160,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#000', fontSize: 14 },
   scrollContent: { paddingHorizontal: 20 },
   sectionTitle: { color: '#333', fontSize: 18, fontWeight: '700', marginBottom: 15 },
-  recentItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  recentItemContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  recentItemBtn: { flex: 1 },
   recentText: { color: '#666', fontSize: 16 },
   eventCard: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 10, marginBottom: 15, elevation: 1 },
   eventImage: { width: 90, height: 90, borderRadius: 12 },

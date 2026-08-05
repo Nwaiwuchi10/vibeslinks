@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 // ─────────────────────────────────────────────
 //  Scalloped Badge — 8 overlapping rotated
@@ -68,6 +68,13 @@ const scallopStyles = StyleSheet.create({
 // ─────────────────────────────────────────────
 export default function WalletSuccessMain() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ amount?: string; type?: string }>();
+
+  const amountParam = params.amount || '0.00';
+  const rawNum = parseFloat(amountParam.replace(/,/g, '').replace('₦', ''));
+  const formattedAmount = isNaN(rawNum)
+    ? '₦0.00'
+    : `₦${rawNum.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -90,7 +97,7 @@ export default function WalletSuccessMain() {
           <ScallopBadge />
         </View>
 
-        <Text style={styles.amountText}>₦300,000.00</Text>
+        <Text style={styles.amountText}>{formattedAmount}</Text>
         <Text style={styles.successLabel}>Successful</Text>
       </View>
 

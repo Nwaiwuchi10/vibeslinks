@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { eventService } from '@/services/eventService';
 import { useDispatch } from 'react-redux';
 import { setBookingInfo } from '@/store/slices/eventSlice';
@@ -19,6 +20,8 @@ import { setBookingInfo } from '@/store/slices/eventSlice';
 const { width } = Dimensions.get('window');
 
 export default function SelectTicketScreen() {
+    const insets = useSafeAreaInsets();
+    const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
     const { id } = useLocalSearchParams<{ id?: string }>();
     const dispatch = useDispatch();
     const [loading, setLoading] = useState(true);
@@ -154,7 +157,7 @@ export default function SelectTicketScreen() {
             </ScrollView>
 
             {/* Bottom CTA */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: 24 + bottomPad }]}>
                 <TouchableOpacity
                     style={[styles.ctaBtn, selected.length === 0 && { opacity: 0.5 }]}
                     onPress={() => selected.length > 0 && setShowSeatsModal(true)}
@@ -174,7 +177,7 @@ export default function SelectTicketScreen() {
             >
                 <View style={styles.modalOverlay}>
                     <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowSeatsModal(false)} />
-                    <View style={styles.seatsSheet}>
+                    <View style={[styles.seatsSheet, { paddingBottom: 28 + bottomPad }]}>
                         <Text style={styles.seatsTitle}>Number of Seats</Text>
 
                         {selected.map(tierId => {

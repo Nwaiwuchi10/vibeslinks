@@ -1,19 +1,19 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  TextInput,
-  ScrollView,
-  Dimensions,
-  KeyboardAvoidingView,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React, { useRef, useState } from 'react';
+import {
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -51,9 +51,9 @@ export default function AddFundMain() {
             <Ionicons name="arrow-back" size={20} color="#1A1A1A" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Add Funds to Wallet</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/dashboard')}>
-          <Ionicons name="home-outline" size={20} color="#1A1A1A" />
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.push('/dashboard')}>
+            <Ionicons name="home-outline" size={20} color="#1A1A1A" />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -62,17 +62,7 @@ export default function AddFundMain() {
           keyboardShouldPersistTaps="handled"
         >
           {/* ── Card Selector ── */}
-          <View style={styles.cardSelector}>
-            {/* Mastercard overlapping circles */}
-            <View style={styles.mastercardLogo}>
-              <View style={[styles.mcCircle, { backgroundColor: '#EB001B' }]} />
-              <View style={[styles.mcCircle, styles.mcCircleRight, { backgroundColor: '#F79E1B' }]} />
-            </View>
-            <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>Roland Emmanuel Ekpe</Text>
-              <Text style={styles.cardNumber}>MasterCard*****9918</Text>
-            </View>
-          </View>
+
 
           {/* ── Amount Input Card ── */}
           <View style={styles.amountCard}>

@@ -23,13 +23,33 @@ export default function GoLivePreviewScreen() {
     const [starting, setStarting] = useState(false);
 
     const handleStartLive = async () => {
-        if (!streamId) return;
         try {
             setStarting(true);
-            await liveStreamService.startStream(streamId);
-            router.replace({ pathname: '/live-dashboard', params: { id: streamId } });
+            let activeStreamId = streamId;
+            if (!activeStreamId) {
+                try {
+                    const result = await liveStreamService.createStream({
+                        title: 'Live Stream',
+                        category: 'General',
+                        privacy: 'All',
+                    });
+                    activeStreamId =
+                        result?.liveStream?.id ||
+                        result?.id ||
+                        result?.stream?.id ||
+                        result?.data?.liveStream?.id;
+                } catch {
+                    /* fallback proceed */
+                }
+            }
+
+            if (activeStreamId) {
+                await liveStreamService.startStream(activeStreamId).catch(() => {});
+            }
+            router.replace({ pathname: '/live-dashboard', params: activeStreamId ? { id: activeStreamId } : undefined });
         } catch (e) {
             console.error('Failed to start stream:', e);
+            router.replace('/live-dashboard');
         } finally {
             setStarting(false);
         }

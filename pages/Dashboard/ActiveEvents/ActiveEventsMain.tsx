@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { hostService } from '@/services/hostService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { hostService } from '@/services/hostService';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function ActiveEventsMain() {
   const router = useRouter();
@@ -26,14 +26,14 @@ export default function ActiveEventsMain() {
         const list = Array.isArray(data) ? data : data?.events || [];
         setEvents(list);
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF9FF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -62,7 +62,7 @@ export default function ActiveEventsMain() {
                 <View key={evt.id} style={styles.eventCard}>
                   <View style={styles.cardHeader}>
                     <Text style={styles.categoryTitle}>{String(evt.category || 'EVENT').toUpperCase()}</Text>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.openLinkContainer}
                       onPress={() => router.push({ pathname: '/dashboard/analytics', params: { eventId: evt.id } })}
                     >
@@ -72,15 +72,15 @@ export default function ActiveEventsMain() {
                   </View>
 
                   {coverUri ? (
-                    <Image 
-                      source={{ uri: coverUri }} 
-                      style={styles.eventCardImage} 
+                    <Image
+                      source={{ uri: coverUri }}
+                      style={styles.eventCardImage}
                       contentFit="cover"
                     />
                   ) : (
-                    <Image 
-                      source={require('@/assets/images/paint.png')} 
-                      style={styles.eventCardImage} 
+                    <Image
+                      source={require('@/assets/images/paint.png')}
+                      style={styles.eventCardImage}
                       contentFit="cover"
                     />
                   )}
@@ -88,7 +88,7 @@ export default function ActiveEventsMain() {
                   <View style={styles.eventCardContent}>
                     <View style={styles.eventTitleRow}>
                       <Text style={styles.eventCardTitle} numberOfLines={1}>{evt.title}</Text>
-                      <Text style={styles.eventCardPrice}>₦{Number(price).toLocaleString()}</Text>
+                      <Text style={styles.eventCardPrice}>${Number(price).toLocaleString()}</Text>
                     </View>
 
                     <View style={styles.statsContainer}>
@@ -102,7 +102,7 @@ export default function ActiveEventsMain() {
                         </View>
                       </View>
                       <View style={styles.statBox}>
-                        <Text style={styles.statValue}>₦{Number(revenue).toLocaleString()}</Text>
+                        <Text style={styles.statValue}>${Number(revenue).toLocaleString()}</Text>
                         <Text style={styles.statLabel}>Revenue</Text>
                       </View>
                     </View>
@@ -122,7 +122,7 @@ export default function ActiveEventsMain() {
 
       {/* Sticky Bottom Tab Bar */}
       <View style={styles.bottomTabBar}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.tabItem}
           onPress={() => router.push('/dashboard' as any)}
         >
@@ -130,14 +130,14 @@ export default function ActiveEventsMain() {
           <Text style={[styles.tabLabel, { color: '#A0A0A0' }]}>Overview</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tabItem, styles.tabActive]}
         >
           <MaterialCommunityIcons name="calendar-month-outline" size={24} color="#7B39FD" />
           <Text style={[styles.tabLabel, { color: '#7B39FD', fontWeight: '800' }]}>Events</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.tabItem}
           onPress={() => router.push('/dashboard/ticket-management' as any)}
         >
@@ -145,7 +145,7 @@ export default function ActiveEventsMain() {
           <Text style={[styles.tabLabel, { color: '#A0A0A0' }]}>Tickets</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.tabItem}
           onPress={() => router.push('/dashboard/wallet' as any)}
         >

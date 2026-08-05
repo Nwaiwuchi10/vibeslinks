@@ -77,9 +77,13 @@ export default function WalletMain() {
     ? displayTransactions
     : displayTransactions.filter((t) => t.category === activeTab);
 
-  const balance = wallet.balance ?? wallet.availableBalance ?? 0;
-  const lifetimeEarnings = wallet.lifetimeEarnings ?? wallet.totalEarnings ?? 0;
-  const totalWithdrawn = wallet.totalWithdrawn ?? wallet.withdrawn ?? 0;
+  const balance = typeof wallet.balance === 'object' ? (wallet.balance?.available ?? 0) : (wallet.balance ?? wallet.availableBalance ?? 0);
+  const withdrawable = typeof wallet.balance === 'object' ? (wallet.balance?.withdrawable ?? balance) : balance;
+  const pendingEventRevenue = typeof wallet.balance === 'object'
+    ? (wallet.balance?.pendingEventRevenue ?? wallet.summary?.pendingEventRevenue ?? 0)
+    : (wallet.summary?.pendingEventRevenue ?? 0);
+  const lifetimeEarnings = wallet.summary ? ((wallet.summary.ticketRevenue ?? 0) + (wallet.summary.liveStreamRevenue ?? 0)) : (wallet.lifetimeEarnings ?? wallet.totalEarnings ?? 0);
+  const totalWithdrawn = wallet.summary?.pendingWithdrawals ?? wallet.totalWithdrawn ?? wallet.withdrawn ?? 0;
 
   const renderTransactionIcon = (item: any) => {
     if (item.avatar) {
@@ -134,13 +138,13 @@ export default function WalletMain() {
 
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>₦{Number(lifetimeEarnings).toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Lifetime earnings</Text>
+                <Text style={styles.statValue}>₦{Number(withdrawable).toLocaleString()}</Text>
+                <Text style={styles.statLabel}>Withdrawable</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>₦{Number(totalWithdrawn).toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Total Withdrawn</Text>
+                <Text style={styles.statValue}>₦{Number(pendingEventRevenue).toLocaleString()}</Text>
+                <Text style={styles.statLabel}>Pending Revenue</Text>
               </View>
             </View>
 

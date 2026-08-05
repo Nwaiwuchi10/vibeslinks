@@ -11,10 +11,11 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 export default function CancelReasonMain() {
   const router = useRouter();
+  const { eventId } = useLocalSearchParams<{ eventId?: string }>();
   const [selectedReason, setSelectedReason] = useState('Artist Unavailable');
   const [details, setDetails] = useState('');
 
@@ -84,7 +85,10 @@ export default function CancelReasonMain() {
         {/* Continue Button */}
         <TouchableOpacity 
           style={styles.continueButton}
-          onPress={() => router.push('/dashboard/cancel-impact')}
+          onPress={() => router.push({
+            pathname: '/dashboard/cancel-impact',
+            params: { eventId: eventId || '', reason: selectedReason, details },
+          })}
         >
           <Text style={styles.continueButtonText}>Continue</Text>
         </TouchableOpacity>

@@ -1,10 +1,10 @@
-import axios, { InternalAxiosRequestConfig } from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import { store } from '@/store';
+import { clearCredentials } from '@/store/slices/authSlice';
 import { startLoading, stopLoading } from '@/store/slices/loadingSlice';
 import { showToast } from '@/store/slices/toastSlice';
-import { clearCredentials } from '@/store/slices/authSlice';
+import axios from 'axios';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 
 // Extend Axios config so callers can pass `{ silent: true }` to suppress error toasts
 declare module 'axios' {
@@ -13,7 +13,9 @@ declare module 'axios' {
   }
 }
 
-const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
+
+const BASE_URL = "http://192.168.0.106:3000"
+// const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
 const TOKEN_KEY = 'vibezlink_access_token';
 
 export const apiClient = axios.create({
@@ -22,14 +24,19 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
-  timeout: 15000,
+  timeout: 120000, // 2 minutes default timeout for all requests
 });
 
 // Request Interceptor: Inject Auth Token & Increment Loading Count
 apiClient.interceptors.request.use(
   async (config) => {
+    // If request contains FormData (video / image upload), increase timeout to 5 minutes (300,000ms)
+    if (config.data instanceof FormData || config.headers?.['Content-Type'] === 'multipart/form-data') {
+      config.timeout = 300000;
+    }
+
     // Log request details and payload
-    console.log(`[apiClient] >>> SEND REQUEST: ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`[apiClient] >>> SEND REQUEST: ${config.method?.toUpperCase()} ${config.url} [Timeout ${config.timeout || 120000}ms]`);
     if (config.data) {
       console.log('[apiClient] Request Payload (Body):', JSON.stringify(config.data, null, 2));
     }
@@ -51,7 +58,7 @@ apiClient.interceptors.request.use(
       const token = state.auth?.token || await SecureStore.getItemAsync(TOKEN_KEY);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        
+
         // Print it nicely so the user can easily find it
         console.log('\n\n======================================================');
         console.log('✨ YOUR CURRENT ACCESS TOKEN (Copy below this line):');

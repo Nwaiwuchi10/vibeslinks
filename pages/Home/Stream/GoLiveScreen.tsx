@@ -47,6 +47,7 @@ export default function GoLiveScreen() {
     const [loadingOptions, setLoadingOptions] = useState(true);
     const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
     const [privacyOptions, setPrivacyOptions] = useState<string[]>(DEFAULT_PRIVACY);
+    const [creating, setCreating] = useState(false);
     
     // Sync state if params change
     React.useEffect(() => {
@@ -82,6 +83,8 @@ export default function GoLiveScreen() {
     };
 
     const handleGoLive = async () => {
+        if (creating) return;
+        setCreating(true);
         try {
             const result = await liveStreamService.createStream({
                 title: streamTitle || 'Untitled Stream',
@@ -89,7 +92,13 @@ export default function GoLiveScreen() {
                 privacy: privacy,
                 ticketPrice: ticketPrice ? parseFloat(ticketPrice) : 0,
             });
-            const streamId = result?.id || result?.stream?.id;
+            const streamId =
+                result?.liveStream?.id ||
+                result?.id ||
+                result?.stream?.id ||
+                result?.data?.liveStream?.id ||
+                result?.data?.id;
+
             if (audioMode === 'camera') {
                 router.push({ pathname: '/go-live-preview', params: streamId ? { id: streamId } : undefined });
             } else {
@@ -97,6 +106,14 @@ export default function GoLiveScreen() {
             }
         } catch (error) {
             console.error('Failed to start stream', error);
+            // Fallback navigation so user is never stuck
+            if (audioMode === 'camera') {
+                router.push('/go-live-preview');
+            } else {
+                router.push('/live-dashboard');
+            }
+        } finally {
+            setCreating(false);
         }
     };
 
@@ -248,10 +265,15 @@ export default function GoLiveScreen() {
                         style={styles.goLiveBtn}
                         activeOpacity={0.85}
                         onPress={handleGoLive}
+                        disabled={creating}
                     >
-                        <Text style={styles.goLiveBtnText}>
-                            {audioMode === 'camera' ? 'Next' : 'Go LIVE'}
-                        </Text>
+                        {creating ? (
+                            <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                            <Text style={styles.goLiveBtnText}>
+                                {audioMode === 'camera' ? 'Next' : 'Go LIVE'}
+                            </Text>
+                        )}
                     </TouchableOpacity>
 
                     {/* Toggle bar - Only shown in Voice mode as per screenshot */}

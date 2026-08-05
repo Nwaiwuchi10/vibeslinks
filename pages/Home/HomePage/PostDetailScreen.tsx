@@ -5,6 +5,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TextInput,
@@ -18,20 +19,24 @@ import {
     MaterialIcons,
 } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { postService } from '@/services/postService';
 import { userService } from '@/services/userService';
+import { useAppSelector } from '@/store/hooks';
 
 import { Video, ResizeMode } from 'expo-av';
 import { Dimensions, FlatList } from 'react-native';
 import { resolveImageUrl } from '@/services/apiClient';
 
+import { navigateToUserProfile } from '@/utils/profileNavigation';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-function timeAgo(dateStr?: string): string {
+function timeAgo(dateStr?: string | Date, _tick?: number): string {
     if (!dateStr) return '';
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = Date.now() - new Date(dateStr as string).getTime();
+    if (diff < 0) return 'just now';
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m`;
@@ -53,19 +58,27 @@ function VideoCell({ uri }: { uri: string }) {
 
     const togglePlay = async () => {
         if (!videoRef.current) return;
-        if (isPlaying) {
-            await videoRef.current.pauseAsync();
-            setIsPlaying(false);
-        } else {
-            await videoRef.current.playAsync();
-            setIsPlaying(true);
+        try {
+            if (isPlaying) {
+                await videoRef.current.pauseAsync();
+                setIsPlaying(false);
+            } else {
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+            }
+        } catch (err) {
+            console.log('[VideoCell] Detail video play/pause status handled:', err);
         }
     };
 
     const toggleMute = async () => {
         if (!videoRef.current) return;
-        await videoRef.current.setIsMutedAsync(!isMuted);
-        setIsMuted(!isMuted);
+        try {
+            await videoRef.current.setIsMutedAsync(!isMuted);
+            setIsMuted(!isMuted);
+        } catch (err) {
+            console.log('[VideoCell] Detail video mute status handled:', err);
+        }
     };
 
     const resolvedUri = resolveImageUrl(uri) || uri;
@@ -211,6 +224,10 @@ function DetailMediaRenderer({ post }: { post?: any }) {
 }
 
 export default function PostDetailScreen() {
+    const insets = useSafeAreaInsets();
+    const currentUser = useAppSelector((state) => state.auth?.user);
+    const currentUserId = currentUser?.id || currentUser?._id;
+
     const params = useLocalSearchParams<{ id?: string; focusComment?: string }>();
     const postId = params.id;
     const focusComment = params.focusComment === 'true';
@@ -223,6 +240,16 @@ export default function PostDetailScreen() {
     const [commentsList, setCommentsList] = useState<any[]>([]);
     const [likesCount, setLikesCount] = useState(0);
     const [hasLiked, setHasLiked] = useState(false);
+    const [repostsCount, setRepostsCount] = useState(0);
+    const [sharesCount, setSharesCount] = useState(0);
+    const [hasReposted, setHasReposted] = useState(false);
+    // Tick every 60s so relative timestamps ("just now" → "1m" etc.) stay accurate
+    const [nowTick, setNowTick] = useState(0);
+
+    useEffect(() => {
+        const timer = setInterval(() => setNowTick(t => t + 1), 60000);
+        return () => clearInterval(timer);
+    }, []);
 
     useEffect(() => {
         if (!postId) {
@@ -255,6 +282,8 @@ export default function PostDetailScreen() {
     useEffect(() => {
         if (post) {
             setLikesCount(post.likesCount ?? 0);
+            setRepostsCount(post.repostsCount ?? 0);
+            setSharesCount(post.sharesCount ?? 0);
             const hasReacted = post?.engagement?.myReaction === 'like' || post?.myReaction === 'like' || post?.engagement?.like === true;
             setHasLiked(!!hasReacted);
         }
@@ -295,16 +324,46 @@ export default function PostDetailScreen() {
         }
     };
 
+    const handleRepost = async () => {
+        if (!postId) return;
+        try {
+            await postService.repostPost(postId);
+            setRepostsCount(prev => prev + 1);
+            setHasReposted(true);
+        } catch (err) {
+            console.error('[PostDetailScreen] Repost error:', err);
+        }
+    };
+
+    const handleShare = async () => {
+        try {
+            const shareContent = post?.content || post?.caption || 'Check out this post on VibezLink!';
+            await Share.share({
+                message: `${shareContent}\n\nShared via VibezLink`,
+            });
+            if (postId) await postService.sharePost(postId);
+            setSharesCount(prev => prev + 1);
+        } catch (error) {
+            console.error('[PostDetailScreen] Share error:', error);
+        }
+    };
+
     const handleSendComment = async () => {
         if (!postId || !replyText.trim()) return;
         try {
-            const newComment = await postService.createPostComment(postId, replyText);
-            setCommentsList(prev => [newComment, ...prev]);
+            const response = await postService.createPostComment(postId, replyText);
+            // Backend returns { message, comment, post } — extract the actual comment object
+            const newComment = response?.comment ?? response;
+            if (newComment && !newComment.author && !newComment.user) {
+                newComment.author = currentUser;
+            }
+            setCommentsList((prev: any[]) => [newComment, ...prev]);
             setReplyText('');
         } catch (err) {
             console.error(err);
         }
     };
+
 
     useEffect(() => {
         if (focusComment && !loading && commentInputRef.current) {
@@ -326,7 +385,8 @@ export default function PostDetailScreen() {
     const timestamp = timeAgo(post?.createdAt);
     const likes = likesCount;
     const comments = commentsList.length;
-    const shares = post?.sharesCount ?? 0;
+    const shares = sharesCount;
+    const reposts = repostsCount;
     const postComments: any[] = commentsList;
 
     return (
@@ -367,23 +427,29 @@ export default function PostDetailScreen() {
                         {/* Post Content */}
                         <View style={styles.postCard}>
                             <View style={styles.postHeader}>
-                                <Image source={{ uri: avatarUri }} style={styles.postAvatar} />
-                                <View style={styles.postAuthorInfo}>
-                                    <Text style={styles.postName}>
-                                        {username}{' '}
-                                        <MaterialIcons
-                                            name="verified"
-                                            size={14}
-                                            color={Colors.primary}
-                                        />
-                                        {timestamp ? (
-                                            <Text style={styles.postTime}> · {timestamp}</Text>
-                                        ) : null}
-                                    </Text>
-                                    {displayName !== username && (
-                                        <Text style={styles.postDisplayName}>{displayName}</Text>
-                                    )}
-                                </View>
+                                <TouchableOpacity
+                                    style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}
+                                    onPress={() => navigateToUserProfile(router, author, currentUserId)}
+                                    activeOpacity={0.8}
+                                >
+                                    <Image source={{ uri: avatarUri }} style={styles.postAvatar} />
+                                    <View style={styles.postAuthorInfo}>
+                                        <Text style={styles.postName}>
+                                            {username}{' '}
+                                            <MaterialIcons
+                                                name="verified"
+                                                size={14}
+                                                color={Colors.primary}
+                                            />
+                                            {timestamp ? (
+                                                <Text style={styles.postTime}> · {timestamp}</Text>
+                                            ) : null}
+                                        </Text>
+                                        {displayName !== username && (
+                                            <Text style={styles.postDisplayName}>{displayName}</Text>
+                                        )}
+                                    </View>
+                                </TouchableOpacity>
                                 <TouchableOpacity 
                                     style={[styles.followBtn, isFollowing && styles.followingBtn]}
                                     onPress={handleFollowToggle}
@@ -423,15 +489,18 @@ export default function PostDetailScreen() {
                                         <Text style={styles.actionText}>{comments}</Text>
                                     )}
                                 </View>
-                                <View style={styles.actionItem}>
-                                    <Feather name="repeat" size={20} color="#8A8A8A" />
-                                    {shares > 0 && (
-                                        <Text style={styles.actionText}>{shares}</Text>
+                                <TouchableOpacity style={styles.actionItem} onPress={handleRepost}>
+                                    <Feather name="repeat" size={20} color={hasReposted ? Colors.primary : '#8A8A8A'} />
+                                    {reposts > 0 && (
+                                        <Text style={[styles.actionText, hasReposted && { color: Colors.primary }]}>{reposts}</Text>
                                     )}
-                                </View>
-                                <View style={styles.actionItem}>
-                                    <Feather name="send" size={20} color="#8A8A8A" />
-                                </View>
+                                </TouchableOpacity>
+                                 <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
+                                     <Feather name="send" size={20} color="#8A8A8A" />
+                                     {shares > 0 && (
+                                         <Text style={styles.actionText}>{shares}</Text>
+                                     )}
+                                 </TouchableOpacity>
                             </View>
                         </View>
 
@@ -439,32 +508,44 @@ export default function PostDetailScreen() {
                         {postComments.length > 0 ? (
                             <View style={styles.commentsSection}>
                                 <Text style={styles.commentsSectionTitle}>Comments</Text>
-                                {postComments.map((comment: any, idx: number) => {
-                                    const commenter =
-                                        comment.author || comment.user || {};
-                                    const commenterAvatar =
-                                        commenter.profilePictureUrl ||
-                                        commenter.avatarUrl ||
-                                        `https://i.pravatar.cc/150?img=${idx + 5}`;
-                                    const commenterName =
-                                        commenter.username || commenter.name || 'User';
-                                    const commentText = comment.text || comment.message || comment.content || '';
-                                    return (
-                                        <View key={comment.id || idx} style={styles.commentRow}>
-                                            <Image
-                                                source={{ uri: commenterAvatar }}
-                                                style={styles.commentAvatar}
-                                            />
-                                            <View style={styles.commentContent}>
-                                                <View style={styles.commentHeader}>
-                                                    <Text style={styles.commentName}>
-                                                        {commenterName}
-                                                    </Text>
-                                                    <Text style={styles.commentTime}>
-                                                        {timeAgo(comment.createdAt)}
-                                                    </Text>
-                                                </View>
-                                                <Text style={styles.commentText}>{commentText}</Text>
+                                 {postComments.map((comment: any, idx: number) => {
+                                     const commenter =
+                                         comment.author || comment.user || {};
+                                     const rawAvatar = commenter.profilePictureUrl || commenter.avatarUrl || null;
+                                     const commenterAvatar = resolveImageUrl(rawAvatar);
+                                     const commenterName =
+                                         commenter.username || commenter.name || 'User';
+                                     const commentText = comment.text || comment.message || comment.content || '';
+                                     return (
+                                         <View key={comment.id || idx} style={styles.commentRow}>
+                                             <TouchableOpacity onPress={() => navigateToUserProfile(router, commenter, currentUserId)} activeOpacity={0.8}>
+                                                 {commenterAvatar ? (
+                                                     <Image
+                                                         source={{ uri: commenterAvatar }}
+                                                         style={styles.commentAvatar}
+                                                     />
+                                                 ) : (
+                                                     <View style={styles.commentAvatarFallback}>
+                                                         <Text style={styles.commentAvatarInitials}>
+                                                             {(commenterName || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                                                         </Text>
+                                                     </View>
+                                                 )}
+                                             </TouchableOpacity>
+                                             <View style={styles.commentContent}>
+                                                 <View style={styles.commentHeader}>
+                                                     <TouchableOpacity onPress={() => navigateToUserProfile(router, commenter, currentUserId)} activeOpacity={0.8}>
+                                                         <Text style={styles.commentName}>
+                                                             {commenterName}
+                                                         </Text>
+                                                     </TouchableOpacity>
+                                                     <Text style={styles.commentTime}>
+                                                         {timeAgo(comment.createdAt, nowTick)}
+                                                     </Text>
+                                                 </View>
+                                                 {commentText ? (
+                                                     <Text style={styles.commentText}>{commentText}</Text>
+                                                 ) : null}
                                             </View>
                                         </View>
                                     );
@@ -485,7 +566,7 @@ export default function PostDetailScreen() {
                     </ScrollView>
 
                     {/* Input Bar */}
-                    <View style={styles.inputContainer}>
+                    <View style={[styles.inputContainer, { paddingBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 16) : Math.max(insets.bottom, 12) }]}>
                         <View style={styles.inputWrapper}>
                             <TextInput
                                 ref={commentInputRef}
@@ -682,6 +763,20 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         marginRight: 12,
         backgroundColor: '#EEE',
+    },
+    commentAvatarFallback: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        marginRight: 12,
+        backgroundColor: '#8E2DE2',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    commentAvatarInitials: {
+        color: '#FFF',
+        fontSize: 12,
+        fontWeight: '700',
     },
     commentContent: {
         flex: 1,

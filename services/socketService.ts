@@ -80,13 +80,25 @@ class SocketService {
       return;
     }
     console.log(`[SocketService] Joining room: ${room}`);
-    this.socket.emit('realtime:join', { room });
+    this.socket.emit('realtime:join', { rooms: [room] });
   }
 
   leaveRoom(room: string) {
     if (!this.socket?.connected) return;
     console.log(`[SocketService] Leaving room: ${room}`);
-    this.socket.emit('realtime:leave', { room });
+    this.socket.emit('realtime:leave', { rooms: [room] });
+  }
+
+  on(event: string, callback: (data: any) => void) {
+    this.socket?.on(event, callback);
+  }
+
+  off(event: string, callback?: (data: any) => void) {
+    if (callback) {
+      this.socket?.off(event, callback);
+    } else {
+      this.socket?.off(event);
+    }
   }
 
   // Live Stream room listeners matching live-stream-emitter-handoff.md

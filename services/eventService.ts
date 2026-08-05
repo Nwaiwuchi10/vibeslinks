@@ -9,13 +9,52 @@ import {
   setComments,
   addCommentToState,
   setLoadingEvents,
+  setLastPurchase,
 } from '@/store/slices/eventSlice';
 import { showToast } from '@/store/slices/toastSlice';
 
 export const eventService = {
   async createEvent(eventData: any) {
-    const response = await apiClient.post('/events', eventData);
-    store.dispatch(showToast({ type: 'success', message: 'Event created successfully!' }));
+    const isMultipart = eventData.imageUrl?.startsWith('file://') || eventData.imageUrl?.startsWith('content://') || eventData.imageUrl?.startsWith('ph://');
+    
+    if (isMultipart) {
+      const formData = new FormData();
+      const coverUri = eventData.imageUrl;
+      const ext = coverUri.split('.').pop() || 'jpg';
+      formData.append('eventCover', {
+        uri: coverUri,
+        type: `image/${ext}`,
+        name: `event-cover.${ext}`,
+      } as any);
+
+      Object.keys(eventData).forEach(key => {
+        if (key === 'imageUrl') return;
+        const val = eventData[key];
+        if (val === undefined || val === null) return;
+        if (Array.isArray(val) || typeof val === 'object') {
+          formData.append(key, JSON.stringify(val));
+        } else {
+          formData.append(key, String(val));
+        }
+      });
+
+      const response = await apiClient.post('/events', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      store.dispatch(showToast({ type: 'success', message: 'Event created successfully!' }));
+      return response.data;
+    } else {
+      const response = await apiClient.post('/events', eventData);
+      store.dispatch(showToast({ type: 'success', message: 'Event created successfully!' }));
+      return response.data;
+    }
+  },
+
+  async updateEvent(id: string, eventData: any) {
+    const response = await apiClient.patch(`/events/${id}`, eventData);
+    store.dispatch(showToast({ type: 'success', message: 'Event updated successfully!' }));
     return response.data;
   },
 
@@ -51,11 +90,62 @@ export const eventService = {
     return (await apiClient.get('/events/artist-options')).data;
   },
 
-  async getEventsNearYou(radiusKm?: string) {
-    const response = await apiClient.get('/events');
-    const items = Array.isArray(response.data) ? response.data : response.data?.items || [];
+  async uploadImage(fileUri: string): Promise<string> {
+    const formData = new FormData();
+    const ext = fileUri.split('.').pop() || 'jpg';
+    formData.append('image', {
+      uri: fileUri,
+      type: `image/${ext}`,
+      name: `upload.${ext}`,
+    } as any);
+
+    const response = await apiClient.post('/events/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data?.url;
+  },
+
+  async getEventsNearYou(params?: {
+    radiusKm?: string;
+    lat?: number;
+    lng?: number;
+    search?: string;
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    sortBy?: 'distance' | 'date' | 'price';
+    sortOrder?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+  }) {
+    const qs = new URLSearchParams();
+    if (params?.radiusKm) qs.set('radiusKm', params.radiusKm);
+    if (params?.lat !== undefined) qs.set('lat', String(params.lat));
+    if (params?.lng !== undefined) qs.set('lng', String(params.lng));
+    if (params?.search) qs.set('search', params.search);
+    if (params?.category) qs.set('category', params.category);
+    if (params?.startDate) qs.set('startDate', params.startDate);
+    if (params?.endDate) qs.set('endDate', params.endDate);
+    if (params?.minPrice !== undefined) qs.set('minPrice', String(params.minPrice));
+    if (params?.maxPrice !== undefined) qs.set('maxPrice', String(params.maxPrice));
+    if (params?.sortBy) qs.set('sortBy', params.sortBy);
+    if (params?.sortOrder) qs.set('sortOrder', params.sortOrder);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+
+    const query = qs.toString();
+    const url = `/events/near-you${query ? `?${query}` : ''}`;
+    const response = await apiClient.get(url);
+    // Response is { data: [...], total, page, limit } — extract items
+    const items: any[] = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data || response.data?.items || response.data?.events || [];
     store.dispatch(setNearYou(items));
-    return items;
+    return { items, total: response.data?.total ?? items.length, page: response.data?.page ?? 1, limit: response.data?.limit ?? items.length };
   },
 
   async getEventsNearYouCards(radiusKm?: string) {
@@ -102,8 +192,19 @@ export const eventService = {
     paymentIntentId?: string;
   }) {
     const response = await apiClient.post(`/events/${id}/tickets/purchase`, data);
+    if (response.data?.purchase) {
+      store.dispatch(setLastPurchase(response.data.purchase));
+    }
     store.dispatch(showToast({ type: 'success', message: 'Ticket purchased successfully!' }));
     return response.data;
+  },
+
+  async purchaseEventTickets(id: string, data: {
+    items: { tierId: string; quantity: number }[];
+    paymentMethod: string;
+    paymentIntentId?: string;
+  }) {
+    return this.purchaseTickets(id, data);
   },
 
   async getMyTickets(status?: string) {
@@ -192,9 +293,15 @@ export const eventService = {
     return (await apiClient.delete(`/events/${id}/collaborators/${collaboratorId}`)).data;
   },
 
-  async scanTicket(id: string, purchaseId: string, quantity: number) {
+  async scanTicket(id: string, purchaseId: string, quantity: number = 1) {
     const response = await apiClient.post(`/events/${id}/tickets/scan`, { purchaseId, quantity });
     store.dispatch(showToast({ type: 'success', message: 'Ticket scanned successfully!' }));
+    return response.data;
+  },
+
+  async cancelEvent(id: string, reason: string) {
+    const response = await apiClient.post(`/events/${id}/cancel`, { reason });
+    store.dispatch(showToast({ type: 'success', message: 'Event cancelled and refunds initiated.' }));
     return response.data;
   },
 
@@ -210,15 +317,6 @@ export const eventService = {
 
   async getEventAnalytics(id: string) {
     return (await apiClient.get(`/events/${id}/analytics`)).data;
-  },
-
-  async getEventAttendees(id: string) {
-    try {
-      const response = await apiClient.get(`/events/${id}/attendees`, { silent: true });
-      return Array.isArray(response.data) ? response.data : response.data?.items || response.data?.attendees || [];
-    } catch {
-      return [];
-    }
   },
 
   async getEventFriendsAttending(id: string) {
@@ -237,5 +335,17 @@ export const eventService = {
     const response = await apiClient.post(`/events/${id}/duplicate`);
     store.dispatch(showToast({ type: 'success', message: 'Event duplicated successfully!' }));
     return response.data;
+  },
+  async getEventSearchScreen() {
+    return (await apiClient.get('/events/search-screen')).data;
+  },
+
+  async searchEvents(query: string, limit?: string) {
+    const q = encodeURIComponent(query);
+    return (await apiClient.get(`/events/search?query=${q}${limit ? `&limit=${limit}` : ''}`)).data;
+  },
+
+  async deleteRecentSearch(id: string) {
+    return (await apiClient.delete(`/events/search/recent/${id}`)).data;
   },
 };

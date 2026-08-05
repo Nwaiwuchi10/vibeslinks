@@ -5,13 +5,14 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { store } from '@/store';
 
 interface Interest {
   id: string;
@@ -32,9 +33,9 @@ const INTERESTS: Interest[] = [
   { id: '9', name: 'Sports Events', icon: 'football', family: 'Ionicons' },
 ];
 
-import { store } from '@/store';
-
 export default function InterestsScreen() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const [selected, setSelected] = useState<string[]>([]);
 
   React.useEffect(() => {
@@ -90,7 +91,7 @@ export default function InterestsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View style={styles.progressContainer}>
           <View style={styles.progressBarBg}>
@@ -124,7 +125,7 @@ export default function InterestsScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity
           style={[styles.nextButton, selected.length === 0 && styles.nextButtonDisabled]}
           activeOpacity={0.88}

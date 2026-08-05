@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { eventService } from '@/services/eventService';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../constants/Colors';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { eventService } from '@/services/eventService';
+import { resolveImageUrl } from '@/services/apiClient';
 
 const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
     const dispatch = useAppDispatch();
@@ -13,7 +14,7 @@ const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
 
     useEffect(() => {
         setLoading(true);
-        eventService.getEventsNearYou()
+        eventService.getEventsNearYou({ radiusKm: '20', limit: 3, sortBy: 'distance' })
             .catch((err) => { console.log('[TrendingNearYou] Error fetching near-you events:', err); })
             .finally(() => setLoading(false));
     }, [refreshKey]);
@@ -21,19 +22,24 @@ const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
     const displayEvents = nearYouEvents.map((evt: any) => ({
         id: evt.id,
         title: evt.title,
-        imageUrl: evt.imageUrl || evt.coverImageUrl || evt.eventPosterUrl || null,
-        location: evt.location || evt.venue || evt.locationText || 'Lagos, Nigeria',
-        dateTimeText: evt.dateTimeText || (evt.startDateTime ? new Date(evt.startDateTime).toLocaleDateString('en-US', {
+        imageUrl: resolveImageUrl(evt.imageUrl || evt.coverImageUrl || evt.eventPosterUrl || null),
+        location: evt.locationText || evt.location || evt.venue || 'Lagos, Nigeria',
+        dateTimeText: evt.dateTimeText || (evt.startsAt || evt.startDateTime || evt.date ? new Date(evt.startsAt || evt.startDateTime || evt.date).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
         }) : 'Upcoming'),
-        priceText: evt.priceText || (evt.ticketPricingTiers?.[0]
-            ? `₦${Number(evt.ticketPricingTiers[0].price).toLocaleString()}`
-            : 'Free'),
-        attendees: evt.attendees || [],
+        priceText: evt.priceText || (evt.price !== undefined ? (evt.price > 0 ? `₦${Number(evt.price).toLocaleString()}` : 'Free') : (evt.ticketTiers?.[0]?.price
+            ? `₦${Number(evt.ticketTiers[0].price).toLocaleString()}`
+            : 'Free')),
+        attendees: Array.isArray(evt.attendees) ? evt.attendees : (evt.attendees?.avatars || evt.peopleIFollowAttending || evt.followersAttending || []),
+        distanceKm: evt.distanceKm,
     }));
+
+    if (!loading && displayEvents.length === 0) {
+        return null;
+    }
 
     return (
         <View style={styles.container}>
@@ -52,14 +58,7 @@ const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
                 </View>
             )}
 
-            {!loading && displayEvents.length === 0 && (
-                <View style={styles.emptyState}>
-                    <Ionicons name="location-outline" size={36} color="#CCC" />
-                    <Text style={styles.emptyText}>No events near you yet</Text>
-                </View>
-            )}
-
-            {!loading && displayEvents.map((event: any) => (
+            {!loading && displayEvents.slice(0, 3).map((event: any) => (
                 <TouchableOpacity
                     key={event.id}
                     style={styles.nearYouCard}
@@ -69,14 +68,22 @@ const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
                     })}
                     activeOpacity={0.9}
                 >
-                    {event.imageUrl ? (
-                        <Image source={{ uri: event.imageUrl }} style={styles.nearYouImage} />
-                    ) : (
-                        <Image source={require('../../../assets/images/redvive.png')} style={styles.nearYouImage} />
-                    )}
-                    
+                    <View style={{ position: 'relative' }}>
+                        {event.imageUrl ? (
+                            <Image source={{ uri: event.imageUrl }} style={styles.nearYouImage} />
+                        ) : (
+                            <Image source={require('../../../assets/images/redvive.png')} style={styles.nearYouImage} />
+                        )}
+                        {event.distanceKm !== undefined && (
+                            <View style={styles.distanceBadge}>
+                                <Ionicons name="navigate" size={10} color="#FFF" />
+                                <Text style={styles.distanceBadgeText}>{Number(event.distanceKm).toFixed(1)} km</Text>
+                            </View>
+                        )}
+                    </View>
+
                     <Text style={styles.nearYouTitle}>{event.title}</Text>
-                    
+
                     <View style={styles.infoRow}>
                         <View style={styles.infoItem}>
                             <Ionicons name="location" size={14} color={Colors.primary} />
@@ -94,13 +101,16 @@ const TrendingNearYou = ({ refreshKey }: { refreshKey?: number }) => {
                         </Text>
                         {event.attendees?.length > 0 && (
                             <View style={styles.attendingStack}>
-                                {event.attendees.slice(0, 4).map((att: any, i: number) => (
-                                    <Image
-                                        key={i}
-                                        source={{ uri: att.avatarUrl || att.profilePictureUrl || `https://i.pravatar.cc/150?img=${i + 5}` }}
-                                        style={[styles.attendingAvatar, { right: i * 15 }]}
-                                    />
-                                ))}
+                                {event.attendees.slice(0, 4).map((att: any, i: number) => {
+                                    const avatar = resolveImageUrl(att.avatarUrl || att.profilePictureUrl || null) || `https://i.pravatar.cc/150?img=${i + 5}`;
+                                    return (
+                                        <Image
+                                            key={i}
+                                            source={{ uri: avatar }}
+                                            style={[styles.attendingAvatar, { right: i * 15 }]}
+                                        />
+                                    );
+                                })}
                             </View>
                         )}
                     </View>
@@ -155,11 +165,24 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         marginBottom: 12,
     },
+    distanceBadge: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: Colors.primary,
+        borderRadius: 20,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    distanceBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
     nearYouTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A2E', marginBottom: 8 },
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoItem: { flexDirection: 'row', alignItems: 'center' },
     nearYouInfoText: { fontSize: 12, color: '#6B6B80', marginLeft: 4 },
-    nearYouFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    nearYouFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
     priceHighlight: { fontSize: 16, color: Colors.primary, fontWeight: '800' },
     priceSub: { fontSize: 12, color: '#8A8A8A', fontWeight: '500' },
     attendingStack: { flexDirection: 'row', position: 'relative', height: 24, width: 80 },

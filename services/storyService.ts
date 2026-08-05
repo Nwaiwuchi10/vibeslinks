@@ -39,6 +39,7 @@ export const storyService = {
 
     const response = await apiClient.post('/stories', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
     });
 
     store.dispatch(showToast({ type: 'success', message: 'Story posted!' }));

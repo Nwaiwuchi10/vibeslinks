@@ -12,6 +12,10 @@ type DiscoverState = 'home' | 'search' | 'filter' | 'ai_initial' | 'ai_results' 
 const DiscoverMain = () => {
   const [state, setState] = useState<DiscoverState>('home');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<{ category: string; range: string }>({
+    category: 'All',
+    range: 'all',
+  });
 
   const handleOpenSearch = () => setState('search');
   const handleOpenFilter = () => setState('filter');
@@ -24,7 +28,6 @@ const DiscoverMain = () => {
   };
 
   const handleAiSuggestion = (suggestion: string) => {
-    // For now just transition to results view
     setState('ai_results');
   };
 
@@ -35,6 +38,8 @@ const DiscoverMain = () => {
           onSearchPress={handleOpenSearch} 
           onFilterPress={handleOpenFilter} 
           onAiPress={handleOpenAi} 
+          activeFilters={filters}
+          onUpdateFilters={setFilters}
         />
       )}
       {state === 'search' && (
@@ -43,7 +48,13 @@ const DiscoverMain = () => {
           onSearchSubmit={handleSearchSubmit}
         />
       )}
-      {state === 'filter' && <DiscoverFilterScreen onBack={handleBackToHome} />}
+      {state === 'filter' && (
+        <DiscoverFilterScreen 
+          onBack={handleBackToHome} 
+          activeFilters={filters}
+          onApplyFilters={setFilters}
+        />
+      )}
       {state === 'ai_initial' && (
         <VibezAIInitialScreen 
           onBack={handleBackToHome} 
@@ -64,7 +75,7 @@ const DiscoverMain = () => {
 export default DiscoverMain;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
+  container: {
+    flex: 1,
+  },
 });

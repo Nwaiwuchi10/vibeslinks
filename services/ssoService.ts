@@ -16,6 +16,7 @@ import { apiClient } from './apiClient';
 import { setCredentials } from '@/store/slices/authSlice';
 import { store } from '@/store';
 import { showToast } from '@/store/slices/toastSlice';
+import * as Location from 'expo-location';
 
 export type SsoProvider = 'google' | 'facebook' | 'apple';
 
@@ -86,9 +87,24 @@ export const ssoService = {
    * On success the backend returns `access_token` immediately.
    */
   async signInWithSso(provider: SsoProvider, providerToken: string) {
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        latitude = loc.coords.latitude;
+        longitude = loc.coords.longitude;
+      }
+    } catch (err) {
+      console.warn('[ssoService] Location request failed:', err);
+    }
+
     const payload = {
       provider,
       ...buildProviderPayload(provider, providerToken),
+      latitude,
+      longitude,
     };
 
     const response = await apiClient.post('/auth/sign-in/sso', payload);

@@ -83,7 +83,13 @@ const SuggestedHosts = () => {
             key={host.id}
             style={styles.hostCard}
             activeOpacity={0.9}
-            onPress={() => router.push({ pathname: '/profile', params: { id: host.id } })}
+            onPress={() => {
+              if (host.id === currentUser?.id || host.id === (currentUser as any)?._id) {
+                router.push('/(tabs)/profile');
+              } else {
+                router.push({ pathname: '/host-profile', params: { id: host.id, name: host.name, avatar: host.avatar } });
+              }
+            }}
           >
             {host.avatar ? (
               <Image source={{ uri: host.avatar }} style={styles.hostImage} resizeMode="cover" />

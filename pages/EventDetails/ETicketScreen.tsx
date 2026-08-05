@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Image,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -8,36 +10,82 @@ import {
     View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { eventService } from '@/services/eventService';
 
 export default function ETicketScreen() {
-    const lastPurchase = useSelector((state: RootState) => state.event.lastPurchase);
+    const insets = useSafeAreaInsets();
+    const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : Math.max(insets.bottom, 20);
+    const params = useLocalSearchParams<{ eventId?: string; purchaseId?: string }>();
+    const reduxPurchase = useSelector((state: RootState) => state.event.lastPurchase);
 
-    if (!lastPurchase) {
+    const [fetchedDetails, setFetchedDetails] = useState<any>(null);
+    const [loading, setLoading] = useState<boolean>(!!(params.eventId && params.purchaseId));
+
+    useEffect(() => {
+        if (params.eventId && params.purchaseId) {
+            setLoading(true);
+            eventService.getTicketPurchaseDetails(params.eventId, params.purchaseId)
+                .then((res) => {
+                    if (res) setFetchedDetails(res);
+                })
+                .catch((err) => {
+                    console.warn('[ETicketScreen] Failed to fetch purchase details:', err);
+                })
+                .finally(() => setLoading(false));
+        }
+    }, [params.eventId, params.purchaseId]);
+
+    const activePurchase = fetchedDetails || reduxPurchase;
+
+    if (loading) {
+        return (
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
+                <View style={styles.header}>
+                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={20} color="#333" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>E-Ticket</Text>
+                    <View style={{ width: 44 }} />
+                </View>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#8E2DE2" />
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    if (!activePurchase) {
         return (
             <SafeAreaView style={styles.safeArea} edges={['top']}>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <Text>No ticket available.</Text>
-                    <TouchableOpacity onPress={() => router.replace('/')} style={{ marginTop: 15, padding: 10, backgroundColor: '#8E2DE2', borderRadius: 8 }}>
-                        <Text style={{ color: '#FFF' }}>Go to Home</Text>
+                    <Text style={{ fontSize: 16, color: '#666', fontWeight: '500' }}>No ticket available.</Text>
+                    <TouchableOpacity onPress={() => router.replace('/')} style={{ marginTop: 15, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#8E2DE2', borderRadius: 12 }}>
+                        <Text style={{ color: '#FFF', fontWeight: '600' }}>Go to Home</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
         );
     }
 
-    // Backend may return data under 'ticket' or 'receipt' depending on the endpoint
-    const ticketData = lastPurchase?.ticket || lastPurchase?.receipt || lastPurchase || {};
-    const event = ticketData?.event || {};
-    const attendee = ticketData?.attendee || {};
-    const ticketTypes: any[] = ticketData?.ticketTypes || ticketData?.items || [];
+    const ticketData = activePurchase?.ticket || activePurchase?.receipt || activePurchase?.purchase || activePurchase || {};
+    const purchaseInfo = activePurchase?.purchase || activePurchase;
+    const event = ticketData?.event || purchaseInfo?.event || {};
+    const attendee = ticketData?.attendee || activePurchase?.user || {};
+    const ticketTypes: any[] = ticketData?.ticketTypes || ticketData?.items || [
+        {
+            tierName: purchaseInfo?.tierName || 'General',
+            quantity: purchaseInfo?.quantity || 1,
+            seatNumbers: purchaseInfo?.seatNumbers || ['General Entry'],
+        }
+    ];
 
-    const qrCodeValue = ticketData?.qrCodeValue || lastPurchase?.qrCodeValue || 'vibezlink://ticket';
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrCodeValue)}`;
+    const qrCodeValue = ticketData?.qrCodeValue || activePurchase?.qrCodeValue || purchaseInfo?.qrCodeValue || `vibezlink://events/${purchaseInfo?.eventId || 'event'}/tickets/${purchaseInfo?.id || 'ticket'}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrCodeValue)}`;
 
 
     return (

@@ -2,12 +2,28 @@ import { apiClient } from './apiClient';
 import { setCredentials, clearCredentials } from '@/store/slices/authSlice';
 import { store } from '@/store';
 import { showToast } from '@/store/slices/toastSlice';
+import * as Location from 'expo-location';
 
 export const authService = {
   async signIn(emailOrUsername: string, password: string) {
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        latitude = loc.coords.latitude;
+        longitude = loc.coords.longitude;
+      }
+    } catch (err) {
+      console.warn('[authService] Location request failed:', err);
+    }
+
     const response = await apiClient.post('/auth/sign-in', {
       emailOrUsername,
       password,
+      latitude,
+      longitude,
     });
     const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
     if (token) {
@@ -28,10 +44,25 @@ export const authService = {
   },
 
   async signInWithPhone(phoneNumber: string, countryCode: string, password: string) {
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        latitude = loc.coords.latitude;
+        longitude = loc.coords.longitude;
+      }
+    } catch (err) {
+      console.warn('[authService] Location request failed:', err);
+    }
+
     const response = await apiClient.post('/auth/sign-in/phone', {
       phoneNumber,
       countryCode,
       password,
+      latitude,
+      longitude,
     });
     const token = response.data?.access_token || response.data?.token || response.data?.accessToken;
     if (token) {
@@ -62,6 +93,8 @@ export const authService = {
   async signInWithSso(
     provider: string,
     token: string,
+    latitude?: number,
+    longitude?: number,
   ) {
     // Build the correct payload for each provider.
     let providerPayload: Record<string, string>;
@@ -77,6 +110,8 @@ export const authService = {
     const response = await apiClient.post('/auth/sign-in/sso', {
       provider,
       ...providerPayload,
+      latitude,
+      longitude,
     });
     const accessToken = response.data?.access_token || response.data?.token || response.data?.accessToken;
     if (accessToken) {
