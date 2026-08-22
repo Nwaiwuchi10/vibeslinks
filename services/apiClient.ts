@@ -14,8 +14,8 @@ declare module 'axios' {
 }
 
 
-const BASE_URL = "http://192.168.0.106:3000"
-// const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
+// const BASE_URL = "http://192.168.0.106:3000"
+const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
 const TOKEN_KEY = 'vibezlink_access_token';
 
 export const apiClient = axios.create({
