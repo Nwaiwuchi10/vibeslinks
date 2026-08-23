@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,60 @@ import {
   Platform,
   Dimensions,
   Modal as RNModal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { hostService } from '@/services/hostService';
 
 const { width } = Dimensions.get('window');
 
 export default function CancelImpactMain() {
   const router = useRouter();
+  const { eventId, reason, details } = useLocalSearchParams<{
+    eventId?: string;
+    reason?: string;
+    details?: string;
+  }>();
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [loadingEvent, setLoadingEvent] = useState(true);
+  const [eventDetail, setEventDetail] = useState<any>(null);
+
+  useEffect(() => {
+    if (!eventId) {
+      setLoadingEvent(false);
+      return;
+    }
+    hostService.getEventDetail(eventId)
+      .then((data) => setEventDetail(data))
+      .catch(() => {})
+      .finally(() => setLoadingEvent(false));
+  }, [eventId]);
+
+  const handleConfirmCancel = async () => {
+    if (!eventId) {
+      router.push('/dashboard/cancel-success');
+      return;
+    }
+    setCancelling(true);
+    try {
+      await hostService.cancelEvent(eventId, reason || 'Other', details || '');
+      setConfirmVisible(false);
+      router.replace('/dashboard/cancel-success');
+    } catch (err) {
+      console.warn('[CancelImpact] cancel error:', err);
+      setConfirmVisible(false);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  // Dynamic values from event detail
+  const ticketsSold = eventDetail?.summary?.ticketsSold ?? eventDetail?.event?.ticketsSold ?? 0;
+  const autoRefundAmt = eventDetail?.summary?.revenue ?? eventDetail?.event?.revenue ?? 0;
+  const registeredGuests = eventDetail?.attendeeManagement?.totalRegisteredGuests ?? eventDetail?.summary?.attendees ?? ticketsSold;
+  const pendingRefunds = eventDetail?.attendeeManagement?.pendingCheckIns ?? 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -33,17 +78,20 @@ export default function CancelImpactMain() {
         <View style={{ width: 44 }} />
       </View>
 
-      <ScrollView 
-        showsVerticalScrollIndicator={false} 
-        contentContainerStyle={styles.scrollContent}
-      >
+      {loadingEvent ? (
+        <ActivityIndicator color="#7B39FD" style={{ flex: 1 }} />
+      ) : (
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={styles.scrollContent}
+        >
         {/* Impact Stats Grid */}
         <View style={styles.statsContainer}>
           <View style={styles.statsRow}>
             {/* Box 1 */}
             <View style={styles.statBox}>
               <View style={styles.statHeader}>
-                <Text style={styles.statValue}>2,540</Text>
+                <Text style={styles.statValue}>{Number(ticketsSold).toLocaleString()}</Text>
                 <View style={styles.arrowIconBg}>
                   <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
                 </View>
@@ -54,7 +102,7 @@ export default function CancelImpactMain() {
             {/* Box 2 (Refund highlight) */}
             <View style={[styles.statBox, styles.statBoxHighlight]}>
               <View style={styles.statHeader}>
-                <Text style={[styles.statValue, { color: '#7B39FD' }]}>₦12,540,000</Text>
+                <Text style={[styles.statValue, { color: '#7B39FD' }]}>₦{Number(autoRefundAmt).toLocaleString()}</Text>
               </View>
               <Text style={styles.statLabel}>Auto Refund Amount</Text>
             </View>
@@ -64,7 +112,7 @@ export default function CancelImpactMain() {
             {/* Box 3 */}
             <View style={styles.statBox}>
               <View style={styles.statHeader}>
-                <Text style={styles.statValue}>45,000</Text>
+                <Text style={styles.statValue}>{Number(registeredGuests).toLocaleString()}</Text>
                 <View style={styles.arrowIconBg}>
                   <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
                 </View>
@@ -75,7 +123,7 @@ export default function CancelImpactMain() {
             {/* Box 4 */}
             <View style={styles.statBox}>
               <View style={styles.statHeader}>
-                <Text style={styles.statValue}>₦12,540,000</Text>
+                <Text style={styles.statValue}>₦{Number(autoRefundAmt).toLocaleString()}</Text>
                 <View style={styles.arrowIconBg}>
                   <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
                 </View>
@@ -109,6 +157,7 @@ export default function CancelImpactMain() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      )}
 
       {/* Confirmation Modal */}
       <RNModal
@@ -137,13 +186,15 @@ export default function CancelImpactMain() {
 
             <View style={styles.modalButtonsRow}>
               <TouchableOpacity 
-                style={styles.modalCancelBtn}
-                onPress={() => {
-                  setConfirmVisible(false);
-                  router.push('/dashboard/cancel-success');
-                }}
+                style={[styles.modalCancelBtn, cancelling && { opacity: 0.6 }]}
+                onPress={handleConfirmCancel}
+                disabled={cancelling}
               >
-                <Text style={styles.modalCancelText}>Cancel Event</Text>
+                {cancelling ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.modalCancelText}>Cancel Event</Text>
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity 

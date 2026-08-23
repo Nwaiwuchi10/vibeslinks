@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Image,
     KeyboardAvoidingView,
@@ -14,12 +14,87 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { chatService } from '@/services/chatService';
+import { socketService } from '@/services/socketService';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+
+import UserAvatar from '@/components/UserAvatar';
+import { resolveImageUrl } from '@/services/apiClient';
+
 export default function ChatDetailScreen() {
     const params = useLocalSearchParams<{ id: string, name: string, image: string }>();
+    const dispatch = useAppDispatch();
     const [message, setMessage] = useState('');
 
-    const chatName = params.name || 'Roland Emmanuel';
-    const chatImage = params.image || 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150';
+    const conversationId = params.id || 'mock-conversation-id';
+
+    const currentUser = useAppSelector((state) => state.auth.user);
+    const currentUserId = currentUser?.id || currentUser?._id || 'current-user-id';
+    const liveMessages = useAppSelector((state) => state.chat.messages[conversationId] || []);
+    const threads = useAppSelector((state) => state.chat.threads) || [];
+
+    const activeThread = threads.find((t: any) => String(t.id || t._id) === String(conversationId));
+    const currentIdStr = String(currentUserId || '');
+
+    const otherParticipant = (activeThread?.participants || []).find((p: any) => {
+        const pid = String(p.id || p._id || p.userId || '');
+        return pid && pid !== currentIdStr;
+    }) || {};
+
+    const isDirect = activeThread?.type === 'direct' || (!activeThread && params.name) || activeThread?.title === 'Direct Chat';
+    const otherName = otherParticipant.name || otherParticipant.fullName || otherParticipant.username;
+
+    const chatName = (isDirect && otherName)
+        ? otherName
+        : (params.name && params.name !== 'Direct Chat' && params.name !== 'Host Event Chat')
+        ? params.name
+        : (activeThread?.title || otherName || 'Chat');
+
+    const rawAvatar = otherParticipant.avatarUrl || otherParticipant.profilePictureUrl || otherParticipant.avatar || params.image;
+    const chatImage = resolveImageUrl(rawAvatar);
+
+    useEffect(() => {
+        // Fetch message logs on launch
+        if (conversationId && conversationId !== 'mock-conversation-id') {
+            chatService.getMessages(conversationId).catch((err) => {
+                console.log('[ChatDetailScreen] Error fetching message history:', err);
+            });
+            // Subscribe to real-time updates for this room
+            socketService.joinRoom(conversationId);
+        }
+
+        return () => {
+            if (conversationId && conversationId !== 'mock-conversation-id') {
+                socketService.leaveRoom(conversationId);
+            }
+        };
+    }, [conversationId]);
+
+    const handleSend = async () => {
+        if (!message.trim()) return;
+        
+        try {
+            if (conversationId === 'mock-conversation-id') {
+                console.log('Sending message in mock conversation mode:', message);
+                setMessage('');
+                return;
+            }
+            await chatService.sendMessage(conversationId, message.trim());
+            setMessage('');
+        } catch (err) {
+            console.error('[ChatDetailScreen] Failed to send message:', err);
+        }
+    };
+
+    const displayMessages = Array.isArray(liveMessages)
+        ? liveMessages.map((msg: any) => ({
+            id: msg.id || msg._id || String(Math.random()),
+            senderId: String(msg.senderId || msg.sender?.id || msg.sender?._id || msg.sender || ''),
+            message: msg.message || msg.content || '',
+            createdAt: msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+            isEventCard: !!msg.isEventCard,
+          }))
+        : [];
 
     return (
         <KeyboardAvoidingView 
@@ -32,21 +107,21 @@ export default function ChatDetailScreen() {
                     <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                         <Ionicons name="arrow-back" size={20} color="#8E2DE2" />
                     </TouchableOpacity>
-
+ 
                     <View style={styles.headerTitleRow}>
-                        <Image source={{ uri: chatImage }} style={styles.headerAvatar} />
-                        <View>
+                        <UserAvatar avatarUrl={chatImage} name={chatName} size={40} />
+                        <View style={{ marginLeft: 10 }}>
                             <Text style={styles.headerName}>{chatName}</Text>
                             <Text style={styles.headerStatus}>Online</Text>
                         </View>
                     </View>
-
-                    <TouchableOpacity style={styles.gridBtn} onPress={() => router.push({ pathname: '/chat-profile', params: { name: chatName, image: chatImage, isGroup: 'false' } })}>
+ 
+                    <TouchableOpacity style={styles.gridBtn} onPress={() => router.push({ pathname: '/chat-profile', params: { name: chatName, image: chatImage || '', isGroup: 'false' } })}>
                         <MaterialCommunityIcons name="dots-grid" size={20} color="#FFF" />
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
-
+ 
             {/* Chat Body (White rounded container) */}
             <View style={styles.chatBodyContainer}>
                 <ScrollView contentContainerStyle={styles.chatScroll} showsVerticalScrollIndicator={false}>
@@ -57,54 +132,49 @@ export default function ChatDetailScreen() {
                         </View>
                     </View>
 
-                    {/* Received Message */}
-                    <View style={styles.msgRowLeft}>
-                        <View style={styles.msgBubbleLeft}>
-                            <Text style={styles.msgTextLeft}>Hi good morning</Text>
-                            <Text style={styles.msgTimeLeft}>11:19 AM</Text>
-                        </View>
-                    </View>
+                    {displayMessages.map((msg) => {
+                        const isMe = msg.senderId === currentUserId;
 
-                    {/* Sent Message */}
-                    <View style={styles.msgRowRight}>
-                        <View style={styles.msgBubbleRight}>
-                            <Text style={styles.msgTextRight}>How are u doing</Text>
-                            <Text style={styles.msgTimeRight}>11:20 AM</Text>
-                        </View>
-                    </View>
-
-                    {/* Received Event Card Message */}
-                    <View style={styles.msgRowLeft}>
-                        <View style={styles.eventCardBubble}>
-                            <View style={styles.eventCardImageWrapper}>
-                                <Image 
-                                    source={{ uri: 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=400' }} 
-                                    style={styles.eventCardImage} 
-                                />
-                                <View style={styles.eventCardOverlay}>
-                                    <View style={styles.eventCardBottomRow}>
-                                        <Text style={styles.eventCardTitle}>The Lion King <Ionicons name="chevron-forward-circle" size={12} color="#FFF" /></Text>
-                                        <Text style={styles.eventCardPrice}>₦15,000</Text>
+                        if (msg.isEventCard) {
+                            return (
+                                <View key={msg.id} style={styles.msgRowLeft}>
+                                    <View style={styles.eventCardBubble}>
+                                        <View style={styles.eventCardImageWrapper}>
+                                            <Image 
+                                                source={{ uri: 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=400' }} 
+                                                style={styles.eventCardImage} 
+                                            />
+                                            <View style={styles.eventCardOverlay}>
+                                                <View style={styles.eventCardBottomRow}>
+                                                    <Text style={styles.eventCardTitle}>The Lion King <Ionicons name="chevron-forward-circle" size={12} color="#FFF" /></Text>
+                                                    <Text style={styles.eventCardPrice}>₦15,000</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                        <View style={styles.eventCardFooter}>
+                                            <Text style={styles.msgTextLeft}>{msg.message}</Text>
+                                            <Text style={styles.msgTimeLeft}>{msg.createdAt}</Text>
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
-                            <View style={styles.eventCardFooter}>
-                                <Text style={styles.msgTextLeft}>Are you going to this tour?</Text>
-                                <Text style={styles.msgTimeLeft}>11:19 AM</Text>
-                            </View>
-                        </View>
-                    </View>
+                            );
+                        }
 
-                    {/* Sent Message */}
-                    <View style={styles.msgRowRight}>
-                        <View style={styles.msgBubbleRight}>
-                            <Text style={styles.msgTextRight}>Yeye, am going with my kinds, have already paid for ticket reservation</Text>
-                            <Text style={styles.msgTimeRight}>11:20 AM</Text>
-                        </View>
-                    </View>
-
+                        return (
+                            <View key={msg.id} style={isMe ? styles.msgRowRight : styles.msgRowLeft}>
+                                <View style={isMe ? styles.msgBubbleRight : styles.msgBubbleLeft}>
+                                    <Text style={isMe ? styles.msgTextRight : styles.msgTextLeft}>
+                                        {msg.message}
+                                    </Text>
+                                    <Text style={isMe ? styles.msgTimeRight : styles.msgTimeLeft}>
+                                        {msg.createdAt}
+                                    </Text>
+                                </View>
+                            </View>
+                        );
+                    })}
                 </ScrollView>
-
+ 
                 {/* Input Bar */}
                 <SafeAreaView edges={['bottom']} style={styles.inputSafeArea}>
                     <View style={styles.inputRow}>
@@ -123,7 +193,7 @@ export default function ChatDetailScreen() {
                             />
                         </View>
                         
-                        <TouchableOpacity style={styles.sendBtn}>
+                        <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
                             <Ionicons name="arrow-up" size={20} color="#FFF" />
                         </TouchableOpacity>
                     </View>
@@ -132,6 +202,7 @@ export default function ChatDetailScreen() {
         </KeyboardAvoidingView>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {

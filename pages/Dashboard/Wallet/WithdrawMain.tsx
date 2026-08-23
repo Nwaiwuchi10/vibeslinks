@@ -1,21 +1,23 @@
-import React, { useState, useRef } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  TextInput,
-  ScrollView,
   Dimensions,
   KeyboardAvoidingView,
   Modal,
-  Animated,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { hostService } from '@/services/hostService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -39,6 +41,7 @@ export default function WithdrawMain() {
   const [reminderVisible, setReminderVisible] = useState(false);
   const [paymentVisible, setPaymentVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Debit Card');
+  const [loading, setLoading] = useState(false);
 
   const handleQuickAmount = (val: string) => {
     const numeric = val.replace('₦', '').replace(/,/g, '');
@@ -81,22 +84,7 @@ export default function WithdrawMain() {
           keyboardShouldPersistTaps="handled"
         >
           {/* ── Card Selector ── */}
-          <View style={styles.cardSelector}>
-            <View style={styles.mastercardLogo}>
-              <View style={[styles.mcCircle, { backgroundColor: '#EB001B' }]} />
-              <View style={[styles.mcCircle, styles.mcCircleRight, { backgroundColor: '#F79E1B' }]} />
-            </View>
-            <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>Roland Emmanuel Ekpe</Text>
-              <Text style={styles.cardNumber}>MasterCard*****9918</Text>
-            </View>
-            <TouchableOpacity style={styles.changeRow}>
-              <Text style={styles.changeText}>Change</Text>
-              <View style={styles.changeCircle}>
-                <Ionicons name="arrow-forward" size={10} color="#FFF" />
-              </View>
-            </TouchableOpacity>
-          </View>
+
 
           {/* ── Amount Input Card ── */}
           <View style={styles.amountCard}>
@@ -322,12 +310,33 @@ export default function WithdrawMain() {
             <TouchableOpacity
               style={styles.payBtn}
               activeOpacity={0.85}
-              onPress={() => {
-                setPaymentVisible(false);
-                router.push('/dashboard/truncation-details');
+              disabled={loading}
+              onPress={async () => {
+                const num = parseFloat(amount.replace(/,/g, ''));
+                if (isNaN(num) || num <= 0) {
+                  Alert.alert('Error', 'Please enter a valid amount.');
+                  return;
+                }
+                setLoading(true);
+                try {
+                  await hostService.requestWithdrawal(num, 'Wallet Withdrawal');
+                  setPaymentVisible(false);
+                  router.push({
+                    pathname: '/dashboard/wallet-success',
+                    params: { amount: num.toString(), type: 'withdraw' }
+                  });
+                } catch (err: any) {
+                  Alert.alert('Withdrawal Failed', err.response?.data?.message || err.message || 'Something went wrong.');
+                } finally {
+                  setLoading(false);
+                }
               }}
             >
-              <Text style={styles.payBtnText}>Pay</Text>
+              {loading ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.payBtnText}>Pay</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>

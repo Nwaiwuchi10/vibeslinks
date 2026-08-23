@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,38 @@ import {
   ScrollView,
   SafeAreaView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { eventService } from '@/services/eventService';
+import { useRouter } from 'expo-router';
 
-const DISCOVER_EVENTS = [
-  { id: '1', title: 'Afro Summer Festival', location: 'Lekki Ikata, Lagos', price: '80,000', tag: 'NIGHTLIFE', image: 'https://images.unsplash.com/photo-1514525253361-bee8d4884c6c?q=80&w=1000' },
-  { id: '2', title: 'Worship De King', location: 'Lekki Ikata, Lagos', price: '15,000', tag: 'FESTIVALS', image: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=1000' },
-  { id: '3', title: 'Afro Summer Festival', location: 'Lekki Ikata, Lagos', price: '80,000', tag: 'SPORTS EVENTS', image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=1000' },
-  { id: '4', title: 'Paint With Mimi, &…', location: 'Lekki Ikata, Lagos', price: '80,000', tag: 'COMEDY', image: 'https://images.unsplash.com/photo-1460661419201-fd4cecea8f82?q=80&w=1000' },
-];
+const DiscoverResultsScreen = ({
+  query,
+  onBack,
+}: {
+  query: string;
+  onBack: () => void;
+}) => {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<any[]>([]);
 
-const DiscoverResultsScreen = ({ query, onBack }: { query: string, onBack: () => void }) => {
+  useEffect(() => {
+    const fetchResults = async () => {
+      setLoading(true);
+      try {
+        const res = await eventService.searchEvents(query);
+        setEvents(res?.cards || res?.items || res || []);
+      } catch (e) {
+        console.warn('[DiscoverResultsScreen] search error:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchResults();
+  }, [query]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -34,20 +55,55 @@ const DiscoverResultsScreen = ({ query, onBack }: { query: string, onBack: () =>
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {DISCOVER_EVENTS.map((event) => (
-          <TouchableOpacity key={event.id} style={styles.eventCard}>
-            <Image source={{ uri: event.image }} style={styles.eventImage} />
-            <View style={styles.eventContent}>
-              <View style={styles.eventTag}><Text style={styles.eventTagText}>{event.tag}</Text></View>
-              <Text style={styles.eventName}>{event.title}</Text>
-              <View style={styles.eventLoc}><Ionicons name="location" size={12} color="#8E2DE2" /><Text style={styles.eventLocText}>{event.location}</Text></View>
-              <Text style={styles.eventPrice}>₦{event.price} <Text style={styles.priceSub}>/Person</Text></Text>
+      {loading ? (
+        <ActivityIndicator color="#8E2DE2" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {events.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="search-outline" size={48} color="#CCC" />
+              <Text style={styles.emptyText}>No events found matching "{query}"</Text>
             </View>
-          </TouchableOpacity>
-        ))}
-        <View style={{ height: 100 }} />
-      </ScrollView>
+          ) : (
+            events.map((event) => {
+              const coverUri = event.imageUrl || event.coverImageUrl || event.eventPosterUrl;
+              return (
+                <TouchableOpacity
+                  key={event.id}
+                  style={styles.eventCard}
+                  onPress={() => event.id && router.push({ pathname: '/event-details', params: { id: event.id } })}
+                >
+                  {coverUri ? (
+                    <Image source={{ uri: coverUri }} style={styles.eventImage} />
+                  ) : (
+                    <Image source={require('../../assets/images/paint.png')} style={styles.eventImage} />
+                  )}
+                  <View style={styles.eventContent}>
+                    {event.category && (
+                      <View style={styles.eventTag}>
+                        <Text style={styles.eventTagText}>{String(event.category).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.eventName}>{event.title}</Text>
+                    {event.location && (
+                      <View style={styles.eventLoc}>
+                        <Ionicons name="location" size={12} color="#8E2DE2" />
+                        <Text style={styles.eventLocText}>{event.location}</Text>
+                      </View>
+                    )}
+                    {event.priceText && (
+                      <Text style={styles.eventPrice}>
+                        {event.priceText} <Text style={styles.priceSub}>/Person</Text>
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -71,4 +127,6 @@ const styles = StyleSheet.create({
   eventLocText: { fontSize: 12, color: '#666', marginLeft: 4 },
   eventPrice: { fontSize: 16, fontWeight: '800', color: '#8E2DE2' },
   priceSub: { fontSize: 10, color: '#999', fontWeight: '500' },
+  emptyState: { alignItems: 'center', paddingVertical: 50 },
+  emptyText: { color: '#999', fontSize: 14, marginTop: 10 },
 });

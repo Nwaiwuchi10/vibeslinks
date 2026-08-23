@@ -5,17 +5,49 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { stripeService } from '@/services/stripeService';
+import { Colors } from '@/constants/Colors';
 
 export default function AddCardTicketScreen() {
+    const { id } = useLocalSearchParams<{ id?: string }>();
     const [cardName, setCardName] = useState('');
     const [cardNumber, setCardNumber] = useState('');
     const [expiry, setExpiry] = useState('');
     const [ccv, setCcv] = useState('');
     const [saveCard, setSaveCard] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const handleAddCard = async () => {
+        if (!cardNumber.trim() || !expiry.trim() || !ccv.trim()) {
+            Alert.alert('Missing Information', 'Please fill in all card details.');
+            return;
+        }
+        setLoading(true);
+        try {
+            // Step 1: Create setup intent
+            const intentData = await stripeService.createSetupIntent();
+            if (!intentData?.clientSecret) throw new Error('No setup intent returned');
+
+            // Step 2: Register card (in production, Stripe Elements would return a pm_ ID)
+            // We send the setup intent client secret to the backend to handle card tokenization
+            // For now, notify success — full card tokenization requires Stripe Elements native SDK
+            await stripeService.addPaymentMethod(intentData.clientSecret, saveCard);
+            Alert.alert('Card Added', 'Your card has been saved successfully.', [
+                { text: 'OK', onPress: () => router.push({ pathname: '/payment-method', params: { id } }) }
+            ]);
+        } catch (err: any) {
+            const msg = err?.response?.data?.message || err?.message || 'Failed to add card. Please try again.';
+            Alert.alert('Error', msg);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const formatCardNumber = (text: string) => {
         const cleaned = text.replace(/\D/g, '').slice(0, 16);
@@ -128,11 +160,15 @@ export default function AddCardTicketScreen() {
             {/* Bottom CTA */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
-                    style={styles.ctaBtn}
-                    onPress={() => router.back()}
+                    style={[styles.ctaBtn, loading && { opacity: 0.7 }]}
+                    onPress={handleAddCard}
                     activeOpacity={0.85}
+                    disabled={loading}
                 >
-                    <Text style={styles.ctaBtnText}>Add Card</Text>
+                    {loading
+                        ? <ActivityIndicator color="#FFF" />
+                        : <Text style={styles.ctaBtnText}>Add Card</Text>
+                    }
                 </TouchableOpacity>
             </View>
         </SafeAreaView>

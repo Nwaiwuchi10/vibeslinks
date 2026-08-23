@@ -1,89 +1,700 @@
-import { Colors } from '../../../constants/Colors';
+import { Colors } from '@/constants/Colors';
+import { resolveImageUrl } from '@/services/apiClient';
+import { postService } from '@/services/postService';
+import { userService } from '@/services/userService';
+import { useAppSelector } from '@/store/hooks';
 import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av';
+import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
-import { Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    Share,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 
-export default function PhotoSocialPost({ imageSource }: { imageSource: any }) {
+import { navigateToUserProfile } from '@/utils/profileNavigation';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+export type PostData = {
+    id?: string;
+    content?: string;
+    caption?: string;
+    mediaUrls?: string[];
+    mediaUrl?: string;
+    imageUrl?: string;
+    mediaType?: string;         // 'image' | 'video' | 'mixed' – from backend
+    mediaTypes?: string[];      // per-item types when multiple media
+    author?: {
+        id?: string;
+        _id?: string;
+        name?: string;
+        username?: string;
+        profilePictureUrl?: string;
+        avatarUrl?: string;
+        isFollowing?: boolean;
+    };
+    user?: {
+        id?: string;
+        _id?: string;
+        name?: string;
+        username?: string;
+        profilePictureUrl?: string;
+        avatarUrl?: string;
+        isFollowing?: boolean;
+    };
+    likesCount?: number;
+    commentsCount?: number;
+    sharesCount?: number;
+    repostsCount?: number;
+    createdAt?: string;
+    visibility?: string;
+    myReaction?: string;
+    engagement?: {
+        like?: boolean;
+        love?: number;
+        wow?: number;
+        sad?: number;
+        angry?: number;
+        total?: number;
+        myReaction?: string;
+    };
+};
+
+interface Props {
+    post?: PostData;
+    imageSource?: any; // Legacy fallback
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function timeAgo(dateStr?: string): string {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+}
+
+/** Detect if a URL points to a video based on extension or mediaType hint */
+function isVideoUrl(url?: string | null, hint?: string): boolean {
+    if (hint === 'video') return true;
+    if (!url) return false;
+    return /\.(mp4|mov|avi|webm|mkv|m4v|3gp)(\?.*)?$/i.test(url);
+}
+
+// ─── Video Cell ───────────────────────────────────────────────────────────────
+
+function VideoCell({ uri, isActive = true }: { uri: string; isActive?: boolean }) {
+    const videoRef = useRef<Video>(null);
+    const isScreenFocused = useIsFocused();
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+
+    let resolvedUri = resolveImageUrl(uri) || uri;
+    const canPlay = isActive && isScreenFocused;
+
+    // Immediately pause and mute when slide is swiped away or screen loses focus
+    useEffect(() => {
+        if (!canPlay && videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+            videoRef.current.setIsMutedAsync(true).catch(() => {});
+            setIsPlaying(false);
+        }
+    }, [canPlay]);
+
+    const togglePlay = async () => {
+        if (!videoRef.current) return;
+        try {
+            if (isPlaying) {
+                await videoRef.current.pauseAsync();
+                setIsPlaying(false);
+            } else {
+                if (isMuted) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    setIsMuted(false);
+                }
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+            }
+        } catch (err) {
+            console.log('[VideoCell] Video play/pause status handled:', err);
+        }
+    };
+
+    const toggleMute = async () => {
+        if (!videoRef.current) return;
+        try {
+            await videoRef.current.setIsMutedAsync(!isMuted);
+            setIsMuted(!isMuted);
+        } catch (err) {
+            console.log('[VideoCell] Video mute status handled:', err);
+        }
+    };
+
+    return (
+        <View style={styles.videoContainer}>
+            <Video
+                ref={videoRef}
+                source={{ uri: resolvedUri }}
+                style={styles.videoPlayer}
+                resizeMode={ResizeMode.COVER}
+                useNativeControls={false}
+                shouldPlay={false}
+                isLooping
+                isMuted={!canPlay || isMuted}
+                onError={(err) => {
+                    console.warn('[VideoCell] Android/iOS Video Error:', err, 'URI:', resolvedUri);
+                }}
+                onPlaybackStatusUpdate={status => {
+                    if (status.isLoaded) {
+                        setIsPlaying(status.isPlaying ?? false);
+                        setIsMuted(status.isMuted ?? false);
+                    }
+                }}
+            />
+            {/* Play / Pause overlay */}
+            <TouchableOpacity style={styles.videoOverlay} onPress={togglePlay} activeOpacity={0.85}>
+                {!isPlaying && (
+                    <View style={styles.playBtnCircle}>
+                        <Ionicons name="play" size={28} color="#FFF" />
+                    </View>
+                )}
+            </TouchableOpacity>
+            {/* Mute/Unmute audio button */}
+            <TouchableOpacity style={styles.muteBtnCircle} onPress={toggleMute} activeOpacity={0.8}>
+                <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={16} color="#FFF" />
+            </TouchableOpacity>
+            {/* Video badge */}
+            <View style={styles.videoBadge}>
+                <Ionicons name="videocam" size={13} color="#FFF" />
+            </View>
+        </View>
+    );
+}
+
+// ─── Media Renderer ───────────────────────────────────────────────────────────
+
+function MediaRenderer({
+    post,
+    imageSource,
+    onMediaPress,
+}: {
+    post?: PostData;
+    imageSource?: any;
+    onMediaPress?: () => void;
+}) {
+    const isScreenFocused = useIsFocused();
+    const allUrls: string[] = [];
+    const addUrl = (u?: string | null) => {
+        if (!u) return;
+        let resolved = resolveImageUrl(u);
+        if (resolved) {
+            if (!allUrls.includes(resolved)) {
+                allUrls.push(resolved);
+            }
+        }
+    };
+
+    if (post?.mediaUrls?.length) {
+        post.mediaUrls.forEach(addUrl);
+    }
+    if ((post as any)?.videoUrls?.length) {
+        (post as any).videoUrls.forEach(addUrl);
+    }
+    addUrl(post?.mediaUrl);
+    addUrl(post?.imageUrl);
+    addUrl((post as any)?.videoUrl);
+
+    // Per-item type hints from backend (if available)
+    const typeHints = post?.mediaTypes || [];
+
+    // If no backend URLs but legacy imageSource provided
+    if (allUrls.length === 0) {
+        if (imageSource) {
+            return (
+                <TouchableOpacity activeOpacity={0.9} onPress={onMediaPress}>
+                    <Image source={imageSource} style={styles.socialImage} />
+                </TouchableOpacity>
+            );
+        }
+        return null;
+    }
+
+    // Single media item
+    if (allUrls.length === 1) {
+        const url = allUrls[0];
+        const hint = typeHints[0] || post?.mediaType;
+        if (isVideoUrl(url, hint)) {
+            return (
+                <TouchableOpacity activeOpacity={0.95} onPress={onMediaPress}>
+                    <VideoCell uri={url} isActive={isScreenFocused} />
+                </TouchableOpacity>
+            );
+        }
+        return (
+            <TouchableOpacity activeOpacity={0.95} onPress={onMediaPress}>
+                <ExpoImage source={{ uri: url }} style={styles.socialImage} contentFit="cover" />
+            </TouchableOpacity>
+        );
+    }
+
+    // Multiple media items — swipeable paged carousel
+    return (
+        <MediaCarousel
+            allUrls={allUrls}
+            typeHints={typeHints}
+            mediaType={post?.mediaType}
+            onMediaPress={onMediaPress}
+        />
+    );
+}
+
+// ─── Swipeable Carousel ───────────────────────────────────────────────────────
+
+function MediaCarousel({
+    allUrls,
+    typeHints,
+    mediaType,
+    onMediaPress,
+}: {
+    allUrls: string[];
+    typeHints: string[];
+    mediaType?: string;
+    onMediaPress?: () => void;
+}) {
+    const isScreenFocused = useIsFocused();
+    const [activeIndex, setActiveIndex] = useState(0);
+    const flatRef = useRef<FlatList>(null);
+
+    const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setActiveIndex(viewableItems[0].index ?? 0);
+        }
+    }).current;
+
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+
+    return (
+        <View style={styles.carouselWrapper}>
+            <FlatList
+                ref={flatRef}
+                data={allUrls}
+                keyExtractor={(_, idx) => String(idx)}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                bounces={false}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                renderItem={({ item: url, index: idx }) => {
+                    const hint = typeHints[idx] || mediaType;
+                    const isSlideActive = idx === activeIndex && isScreenFocused;
+                    return (
+                        <TouchableOpacity
+                            style={styles.carouselSlide}
+                            activeOpacity={0.95}
+                            onPress={onMediaPress}
+                        >
+                            {isVideoUrl(url, hint) ? (
+                                <VideoCell uri={url} isActive={isSlideActive} />
+                            ) : (
+                                <ExpoImage source={{ uri: url }} style={styles.socialImage} contentFit="cover" />
+                            )}
+                        </TouchableOpacity>
+                    );
+                }}
+            />
+
+            {/* "1 / N" counter — top right */}
+            <View style={styles.slideCounter}>
+                <Text style={styles.slideCounterText}>
+                    {activeIndex + 1} / {allUrls.length}
+                </Text>
+            </View>
+
+            {/* Dot indicators — bottom centre */}
+            <View style={styles.dotsRow}>
+                {allUrls.map((_, i) => (
+                    <View
+                        key={i}
+                        style={[
+                            styles.dot,
+                            i === activeIndex ? styles.dotActive : styles.dotInactive,
+                        ]}
+                    />
+                ))}
+            </View>
+        </View>
+    );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export default function PhotoSocialPost({ post, imageSource }: Props) {
+    const currentUser = useAppSelector((state) => state.auth?.user);
     const [showOptions, setShowOptions] = useState(false);
     const [showHideModal, setShowHideModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [isHidden, setIsHidden] = useState(false);
+
+    const author = post?.author || post?.user;
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [likesCount, setLikesCount] = useState(post?.likesCount ?? 0);
+    const [hasLiked, setHasLiked] = useState(false);
+    const [repostsCount, setRepostsCount] = useState(post?.repostsCount ?? 0);
+    const [hasReposted, setHasReposted] = useState(false);
+
+    // Is the current user the creator of this post?
+    const authorId = author?.id || author?._id;
+    const currentUserId = currentUser?.id || currentUser?._id;
+    const isOwner = !!(authorId && currentUserId && authorId === currentUserId);
+
+    useEffect(() => {
+        if (author?.isFollowing !== undefined) {
+            setIsFollowing(author.isFollowing);
+        }
+    }, [author]);
+
+    useEffect(() => {
+        if (post?.likesCount !== undefined) setLikesCount(post.likesCount);
+        if (post?.repostsCount !== undefined) setRepostsCount(post.repostsCount);
+        const reacted =
+            post?.engagement?.myReaction === 'like' ||
+            post?.myReaction === 'like' ||
+            post?.engagement?.like === true;
+        setHasLiked(!!reacted);
+    }, [post]);
+
+    const handleLikeToggle = async () => {
+        if (!post?.id) return;
+        try {
+            if (hasLiked) {
+                await postService.removeReactionFromPost(post.id);
+                setHasLiked(false);
+                setLikesCount((prev: number) => Math.max(0, prev - 1));
+            } else {
+                await postService.reactToPost(post.id, 'like');
+                setHasLiked(true);
+                setLikesCount((prev: number) => prev + 1);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleRepost = async () => {
+        if (!post?.id) return;
+        try {
+            await postService.repostPost(post.id);
+            setRepostsCount((prev: number) => prev + 1);
+            setHasReposted(true);
+        } catch (err) {
+            console.error('[PhotoSocialPost] Repost error:', err);
+        }
+    };
+
+    const handleShare = async () => {
+        try {
+            const shareContent = post?.content || post?.caption || 'Check out this post on VibezLink!';
+            await Share.share({
+                message: `${shareContent}\n\nShared via VibezLink`,
+            });
+            if (post?.id) await postService.sharePost(post.id);
+        } catch (error) {
+            console.error('[PhotoSocialPost] Share error:', error);
+        }
+    };
 
     const handleOptionsPress = () => setShowOptions(true);
-    
+
     const handleHidePress = () => {
         setShowOptions(false);
         setTimeout(() => setShowHideModal(true), 300);
     };
 
+    const handleHideConfirm = () => {
+        setShowHideModal(false);
+        setIsHidden(true);
+    };
+
+    const handleFollow = async () => {
+        if (!authorId) return;
+        try {
+            await userService.followUser(authorId);
+            setIsFollowing(true);
+            setShowOptions(false);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleUnfollow = async () => {
+        if (!authorId) return;
+        try {
+            await userService.unfollowUser(authorId);
+            setIsFollowing(false);
+            setShowOptions(false);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleReport = () => {
+        setShowOptions(false);
+        if (post?.id) {
+            router.push({ pathname: '/report', params: { id: post.id, type: 'post' } });
+        }
+    };
+
+    const handleEditPost = () => {
+        setShowOptions(false);
+        if (post?.id) {
+            router.push({ pathname: '/edit-post', params: { id: post.id } });
+        }
+    };
+
+    const handleDeletePress = () => {
+        setShowOptions(false);
+        setTimeout(() => setShowDeleteModal(true), 300);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!post?.id) return;
+        try {
+            await postService.deletePost(post.id);
+            setShowDeleteModal(false);
+            setIsHidden(true);
+        } catch (err) {
+            console.error('[PhotoSocialPost] Delete post failed:', err);
+        }
+    };
+
+    const goToDetail = () => {
+        if (post?.id) {
+            router.push({ pathname: '/post-details', params: { id: post.id } });
+        } else {
+            router.push('/post-details');
+        }
+    };
+
+    const handleCommentPress = () => {
+        if (post?.id) {
+            router.push({ pathname: '/post-details', params: { id: post.id, focusComment: 'true' } });
+        } else {
+            router.push('/post-details');
+        }
+    };
+
+    if (isHidden) return null;
+
+    // ── Derived display values ──
+    const avatarUri = resolveImageUrl(author?.profilePictureUrl || author?.avatarUrl || null) || undefined;
+    const displayName = author?.name || author?.username || 'VibezLink User';
+    const username = author?.username || author?.name || 'vibezlink';
+    const caption = post?.content || post?.caption || '';
+    const timestamp = timeAgo(post?.createdAt);
+    const comments = post?.commentsCount ?? 0;
+    const shares = post?.sharesCount ?? 0;
+    const reposts = repostsCount;
+
+    const goToFullscreenFeed = () => {
+        if (post?.id) {
+            router.push({ pathname: '/fullscreen-feed', params: { startId: post.id } });
+        }
+    };
+
     return (
         <>
-            <TouchableOpacity style={styles.socialCard} activeOpacity={0.9} onPress={() => router.push('/post-details')}>
+            <View style={styles.socialCard}>
+                {/* Header */}
                 <View style={styles.socialHeader}>
-                    <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.socialAvatar} />
-                    <Text style={styles.socialName}>am_official_percy <MaterialIcons name="verified" size={12} color={Colors.primary} /> <Text style={styles.socialTime}>. 2h</Text></Text>
-                    <TouchableOpacity style={{ marginLeft: 'auto', padding: 4 }} onPress={handleOptionsPress}>
+                    <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                        activeOpacity={0.7}
+                        onPress={() => navigateToUserProfile(router, author, currentUserId)}
+                    >
+                        {avatarUri ? (
+                            <Image source={{ uri: avatarUri }} style={styles.socialAvatar} />
+                        ) : (
+                            <View style={[styles.socialAvatar, styles.avatarPlaceholder]}>
+                                <Text style={styles.avatarInitials}>
+                                    {displayName ? displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'VL'}
+                                </Text>
+                            </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.socialName} numberOfLines={1}>
+                                {username}{' '}
+                                {/* <MaterialIcons name="verified" size={12} color={Colors.primary} /> */}
+                                {timestamp ? (
+                                    <Text style={styles.socialTime}> · {timestamp}</Text>
+                                ) : null}
+                            </Text>
+                            {displayName !== username && (
+                                <Text style={styles.displayName} numberOfLines={1}>
+                                    {displayName}
+                                </Text>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{ padding: 4 }} onPress={handleOptionsPress}>
                         <MaterialCommunityIcons name="dots-horizontal" size={20} color="#333" />
                     </TouchableOpacity>
                 </View>
-                <Text style={styles.socialCaption}>It's Friday. Let party together</Text>
-                <Image source={imageSource} style={styles.socialImage} />
 
+                {/* Caption + Media */}
+                <TouchableOpacity activeOpacity={0.9} onPress={goToDetail}>
+                    {caption ? <Text style={styles.socialCaption}>{caption}</Text> : null}
+                </TouchableOpacity>
+
+                <MediaRenderer post={post} imageSource={imageSource} onMediaPress={goToFullscreenFeed} />
+
+                {/* Actions */}
                 <View style={styles.socialActions}>
-                    <View style={styles.actionItem}>
-                        <Ionicons name="heart-outline" size={18} color="#888" />
-                        <Text style={styles.actionText}>441</Text>
-                    </View>
-                    <View style={styles.actionItem}>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleLikeToggle}>
+                        <Ionicons
+                            name={hasLiked ? 'heart' : 'heart-outline'}
+                            size={18}
+                            color={hasLiked ? Colors.primary : '#888'}
+                        />
+                        <Text style={[styles.actionText, hasLiked && { color: Colors.primary }]}>
+                            {likesCount > 0 ? likesCount : ''}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleCommentPress}>
                         <MaterialCommunityIcons name="comment-outline" size={18} color="#888" />
-                        <Text style={styles.actionText}>108</Text>
-                    </View>
-                    <View style={styles.actionItem}>
-                        <Feather name="repeat" size={18} color="#888" />
-                        <Text style={styles.actionText}>83</Text>
-                    </View>
-                    <View style={styles.actionItem}>
+                        <Text style={styles.actionText}>{comments > 0 ? comments : ''}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleRepost}>
+                        <Feather name="repeat" size={18} color={hasReposted ? Colors.primary : '#888'} />
+                        <Text style={[styles.actionText, hasReposted && { color: Colors.primary }]}>{reposts > 0 ? reposts : ''}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
                         <Feather name="share" size={18} color="#888" />
-                        <Text style={styles.actionText}>579</Text>
-                    </View>
+                    </TouchableOpacity>
                 </View>
-            </TouchableOpacity>
+            </View>
 
             {/* Options Modal */}
-            <Modal visible={showOptions} transparent animationType="slide" onRequestClose={() => setShowOptions(false)}>
+            <Modal
+                visible={showOptions}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowOptions(false)}
+            >
                 <View style={styles.modalOverlay}>
-                    <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowOptions(false)} />
+                    <TouchableOpacity
+                        style={styles.modalDismiss}
+                        onPress={() => setShowOptions(false)}
+                    />
                     <View style={styles.optionsContent}>
                         <View style={styles.dragIndicator} />
-                        <TouchableOpacity style={styles.optionBtn}>
-                            <Text style={styles.optionBtnText}>Follow</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.optionBtn}>
-                            <Text style={styles.optionBtnText}>Unfollow</Text>
-                        </TouchableOpacity>
+
+                        {/* Edit Post — only for owner */}
+                        {isOwner && (
+                            <>
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleEditPost}>
+                                    <View style={styles.optionRow}>
+                                        <Ionicons name="create-outline" size={20} color={Colors.primary} />
+                                        <Text style={[styles.optionBtnText, { color: Colors.primary }]}>Edit Post</Text>
+                                    </View>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleDeletePress}>
+                                    <View style={styles.optionRow}>
+                                        <Ionicons name="trash-outline" size={20} color="#E91E63" />
+                                        <Text style={[styles.optionBtnText, { color: '#E91E63' }]}>Delete Post</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </>
+                        )}
+
+                        {/* Follow / Unfollow — only for non-owners */}
+                        {!isOwner && (
+                            isFollowing ? (
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleUnfollow}>
+                                    <Text style={styles.optionBtnText}>Unfollow</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity style={styles.optionBtn} onPress={handleFollow}>
+                                    <Text style={styles.optionBtnText}>Follow</Text>
+                                </TouchableOpacity>
+                            )
+                        )}
+
                         <TouchableOpacity style={styles.optionBtn} onPress={handleHidePress}>
                             <Text style={styles.optionBtnText}>Hide</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.optionBtn}>
-                            <Text style={[styles.optionBtnText, { color: '#E91E63' }]}>Report</Text>
-                        </TouchableOpacity>
+
+                        {!isOwner && (
+                            <TouchableOpacity style={styles.optionBtn} onPress={handleReport}>
+                                <Text style={[styles.optionBtnText, { color: '#E91E63' }]}>Report</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
             </Modal>
 
             {/* Hide Post Modal */}
-            <Modal visible={showHideModal} transparent animationType="fade" onRequestClose={() => setShowHideModal(false)}>
+            <Modal
+                visible={showHideModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowHideModal(false)}
+            >
                 <View style={styles.centerModalOverlay}>
                     <View style={styles.hideModalContent}>
                         <View style={styles.hideIconOuter}>
-                            <MaterialCommunityIcons name="eye-off-outline" size={32} color="#8E2DE2" />
+                            <MaterialCommunityIcons name="eye-off-outline" size={32} color={Colors.primary} />
                         </View>
                         <Text style={styles.hideTitle}>Hide this post?</Text>
                         <Text style={styles.hideSubtitle}>You'll see fewer posts like this.</Text>
                         <View style={styles.hideBtnRow}>
-                            <TouchableOpacity style={styles.hideConfirmBtn} onPress={() => setShowHideModal(false)}>
+                            <TouchableOpacity style={styles.hideConfirmBtn} onPress={handleHideConfirm}>
                                 <Text style={styles.hideConfirmText}>Hide Post</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.hideCancelBtn} onPress={() => setShowHideModal(false)}>
+                                <Text style={styles.hideCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                visible={showDeleteModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDeleteModal(false)}
+            >
+                <View style={styles.centerModalOverlay}>
+                    <View style={styles.hideModalContent}>
+                        <View style={[styles.hideIconOuter, { backgroundColor: '#FCE8E6' }]}>
+                            <MaterialCommunityIcons name="trash-can-outline" size={32} color="#E91E63" />
+                        </View>
+                        <Text style={styles.hideTitle}>Delete this post?</Text>
+                        <Text style={styles.hideSubtitle}>This action cannot be undone and this post will be removed permanently.</Text>
+                        <View style={styles.hideBtnRow}>
+                            <TouchableOpacity
+                                style={[styles.hideConfirmBtn, { backgroundColor: '#E91E63' }]}
+                                onPress={handleDeleteConfirm}
+                            >
+                                <Text style={styles.hideConfirmText}>Delete</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.hideCancelBtn} onPress={() => setShowDeleteModal(false)}>
                                 <Text style={styles.hideCancelText}>Cancel</Text>
                             </TouchableOpacity>
                         </View>
@@ -107,13 +718,120 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
-        marginBottom: 12,
+        marginBottom: 10,
+        gap: 10,
     },
-    socialAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+    socialAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#EEE' },
+    avatarPlaceholder: {
+        backgroundColor: '#8E2DE2',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarInitials: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '700',
+    },
     socialName: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
+    displayName: { fontSize: 12, color: '#888', marginTop: 1 },
     socialTime: { fontSize: 13, fontWeight: '400', color: '#888' },
-    socialCaption: { fontSize: 14, color: '#1A1A2E', paddingHorizontal: 20, marginBottom: 12 },
-    socialImage: { width: '100%', height: 300 },
+    socialCaption: {
+        fontSize: 14,
+        color: '#1A1A2E',
+        paddingHorizontal: 20,
+        marginBottom: 12,
+        lineHeight: 20,
+    },
+    socialImage: { width: SCREEN_WIDTH, height: 300, backgroundColor: '#F5F5F5' },
+    // Video
+    videoContainer: {
+        width: SCREEN_WIDTH,
+        height: 300,
+        backgroundColor: '#000',
+        position: 'relative',
+    },
+    videoPlayer: { width: SCREEN_WIDTH, height: 300 },
+    videoOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    playBtnCircle: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    videoBadge: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    muteBtnCircle: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    // ── Carousel ──────────────────────────────────────────────────────────────
+    carouselWrapper: {
+        position: 'relative',
+        height: 300,
+    },
+    carouselSlide: {
+        width: SCREEN_WIDTH,
+        height: 300,
+    },
+    // "1 / N" counter — top right corner
+    slideCounter: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.52)',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+    },
+    slideCounterText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+    // Dot indicators — bottom centre
+    dotsRow: {
+        position: 'absolute',
+        bottom: 10,
+        left: 0,
+        right: 0,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+    },
+    dot: {
+        height: 6,
+        borderRadius: 3,
+    },
+    dotActive: {
+        width: 20,
+        backgroundColor: '#FFF',
+    },
+    dotInactive: {
+        width: 6,
+        backgroundColor: 'rgba(255,255,255,0.45)',
+    },
+    // Actions
     socialActions: {
         flexDirection: 'row',
         paddingHorizontal: 20,
@@ -137,7 +855,14 @@ const styles = StyleSheet.create({
         paddingBottom: 40,
         paddingTop: 12,
     },
-    dragIndicator: { width: 48, height: 4, backgroundColor: '#CCC', borderRadius: 2, alignSelf: 'center', marginBottom: 24 },
+    dragIndicator: {
+        width: 48,
+        height: 4,
+        backgroundColor: '#CCC',
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginBottom: 24,
+    },
     optionBtn: {
         backgroundColor: '#F9F9F9',
         borderRadius: 16,
@@ -147,15 +872,53 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#F0F0F0',
     },
+    optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     optionBtnText: { fontSize: 16, fontWeight: '500', color: '#333' },
-    centerModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-    hideModalContent: { backgroundColor: '#FFF', borderRadius: 24, padding: 24, width: '100%', alignItems: 'center' },
-    hideIconOuter: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F7F4FA', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+    centerModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+    },
+    hideModalContent: {
+        backgroundColor: '#FFF',
+        borderRadius: 24,
+        padding: 24,
+        width: '100%',
+        alignItems: 'center',
+    },
+    hideIconOuter: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#F7F4FA',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
     hideTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 8 },
-    hideSubtitle: { fontSize: 14, color: '#8A8A8A', textAlign: 'center', marginBottom: 24 },
+    hideSubtitle: {
+        fontSize: 14,
+        color: '#8A8A8A',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
     hideBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
-    hideConfirmBtn: { flex: 1, backgroundColor: '#333', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+    hideConfirmBtn: {
+        flex: 1,
+        backgroundColor: '#333',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
     hideConfirmText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
-    hideCancelBtn: { flex: 1, backgroundColor: '#EAEAEA', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+    hideCancelBtn: {
+        flex: 1,
+        backgroundColor: '#EAEAEA',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
     hideCancelText: { color: '#333', fontSize: 15, fontWeight: '600' },
 });

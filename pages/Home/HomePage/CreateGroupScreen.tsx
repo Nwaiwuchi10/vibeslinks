@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Image,
     ScrollView,
@@ -7,34 +7,36 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '@/constants/Colors';
-
-const USERS = [
-    { id: '1', name: 'Sophia Carter', image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' },
-    { id: '2', name: 'Malik Johnson', image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' },
-    { id: '3', name: 'Elena Rossi', image: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150' },
-    { id: '4', name: 'Hiroshi Tanaka', image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150' },
-    { id: '5', name: 'Amina Yusuf', image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150' },
-    { id: '6', name: 'Diego Morales', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' },
-];
-
-const INITIAL_SELECTED = [
-    { id: 's1', name: 'adevibes', image: 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150' },
-    { id: 's2', name: 'Nicky', image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' },
-    { id: 's3', name: 'ramonbrown', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' },
-    { id: 's4', name: 'topaz', image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' },
-];
+import { userService } from '@/services/userService';
+import { chatService } from '@/services/chatService';
 
 export default function CreateGroupScreen() {
     const params = useLocalSearchParams<{ mode: string }>();
     const isAddMode = params.mode === 'add';
 
-    const [selectedTop, setSelectedTop] = useState(INITIAL_SELECTED);
-    const [selectedList, setSelectedList] = useState<string[]>(['2', '6']); // Malik and Diego preselected for demo
+    const [friends, setFriends] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedList, setSelectedList] = useState<string[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    useEffect(() => {
+        userService.getFollowers()
+            .then((res) => {
+                const list = Array.isArray(res) ? res : res.followers || res.items || [];
+                setFriends(list.map((item: any) => ({
+                    id: String(item.id || item._id),
+                    name: item.fullName || item.name || item.username || 'User',
+                    image: item.profilePictureUrl || item.avatarUrl || `https://i.pravatar.cc/150?username=${item.username || 'user'}`,
+                })));
+            })
+            .catch((err) => console.warn('Error loading followers:', err))
+            .finally(() => setLoading(false));
+    }, []);
 
     const toggleSelection = (id: string) => {
         setSelectedList(prev => 
@@ -42,11 +44,25 @@ export default function CreateGroupScreen() {
         );
     };
 
-    const removeTopItem = (id: string) => {
-        setSelectedTop(prev => prev.filter(item => item.id !== id));
-    };
+    const filteredUsers = friends.filter(u =>
+        u.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
-    const totalSelected = selectedTop.length + selectedList.length;
+    const totalSelected = selectedList.length;
+
+    const handleCreateOrAdd = async () => {
+        if (totalSelected === 0) return;
+        try {
+            const thread = await chatService.createGroupThread("Group Chat " + (new Date().toLocaleDateString()), selectedList);
+            if (thread && thread.id) {
+                router.replace({ pathname: '/chat-detail', params: { id: thread.id, name: thread.title, isGroup: 'true' } });
+            } else {
+                router.back();
+            }
+        } catch (e) {
+            console.error('Failed to create group thread:', e);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -54,7 +70,7 @@ export default function CreateGroupScreen() {
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={20} color="#333" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{isAddMode ? 'Add people' : 'Create group chart'}</Text>
+                <Text style={styles.headerTitle}>{isAddMode ? 'Add people' : 'Create group chat'}</Text>
             </View>
 
             <View style={styles.searchContainer}>
@@ -63,53 +79,44 @@ export default function CreateGroupScreen() {
                     style={styles.searchInput}
                     placeholder="Search by name or username"
                     placeholderTextColor="#A0A0A0"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
                 />
             </View>
 
-            {/* Selected Top Row */}
-            {selectedTop.length > 0 && (
-                <View style={styles.selectedContainer}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectedScroll}>
-                        {selectedTop.map((user) => (
-                            <View key={user.id} style={styles.selectedItem}>
-                                <View style={styles.selectedImageContainer}>
-                                    <Image source={{ uri: user.image }} style={styles.selectedImage} />
-                                    <TouchableOpacity style={styles.removeBtn} onPress={() => removeTopItem(user.id)}>
-                                        <Ionicons name="close" size={12} color="#FFF" />
-                                    </TouchableOpacity>
-                                </View>
-                                <Text style={styles.selectedName} numberOfLines={1}>{user.name}</Text>
-                            </View>
-                        ))}
-                    </ScrollView>
+            {loading ? (
+                <ActivityIndicator color="#8E2DE2" style={{ flex: 1 }} />
+            ) : filteredUsers.length === 0 ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ color: '#999' }}>No contacts found.</Text>
                 </View>
+            ) : (
+                <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+                    <Text style={styles.suggestedTitle}>Suggested</Text>
+                    
+                    {filteredUsers.map((user) => {
+                        const isSelected = selectedList.includes(user.id);
+                        return (
+                            <TouchableOpacity 
+                                key={user.id} 
+                                style={styles.userRow}
+                                onPress={() => toggleSelection(user.id)}
+                                activeOpacity={0.8}
+                            >
+                                <Image source={{ uri: user.image }} style={styles.userAvatar} />
+                                <Text style={[styles.userName, !isSelected && { color: '#8A8A8A', fontWeight: '500' }]}>{user.name}</Text>
+                                
+                                <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                                    {isSelected && <Ionicons name="checkmark" size={12} color="#FFF" />}
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
             )}
 
-            <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-                <Text style={styles.suggestedTitle}>Suggested</Text>
-                
-                {USERS.map((user) => {
-                    const isSelected = selectedList.includes(user.id);
-                    return (
-                        <TouchableOpacity 
-                            key={user.id} 
-                            style={styles.userRow}
-                            onPress={() => toggleSelection(user.id)}
-                            activeOpacity={0.8}
-                        >
-                            <Image source={{ uri: user.image }} style={styles.userAvatar} />
-                            <Text style={[styles.userName, !isSelected && { color: '#8A8A8A', fontWeight: '500' }]}>{user.name}</Text>
-                            
-                            <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                                {isSelected && <Ionicons name="checkmark" size={12} color="#FFF" />}
-                            </View>
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
-
             <View style={styles.bottomContainer}>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/chat-profile', params: { isGroup: 'true' }})}>
+                <TouchableOpacity style={styles.actionBtn} onPress={handleCreateOrAdd}>
                     <Text style={styles.actionText}>{isAddMode ? `Add (${totalSelected})` : `Create (${totalSelected})`}</Text>
                 </TouchableOpacity>
             </View>
@@ -118,155 +125,20 @@ export default function CreateGroupScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-    },
-    backBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#EAEAEA',
-        marginRight: 16,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#333',
-    },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F3F3F3',
-        marginHorizontal: 20,
-        borderRadius: 24,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        marginBottom: 20,
-    },
-    searchInput: {
-        flex: 1,
-        marginLeft: 10,
-        fontSize: 15,
-        color: '#333',
-    },
-    selectedContainer: {
-        marginBottom: 20,
-    },
-    selectedScroll: {
-        paddingHorizontal: 20,
-        gap: 16,
-    },
-    selectedItem: {
-        alignItems: 'center',
-        width: 64,
-    },
-    selectedImageContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        marginBottom: 6,
-    },
-    selectedImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 32,
-    },
-    removeBtn: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        backgroundColor: '#8E2DE2',
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#FAFAFA',
-    },
-    selectedName: {
-        fontSize: 12,
-        color: '#333',
-        fontWeight: '500',
-    },
-    listContent: {
-        paddingHorizontal: 20,
-        paddingBottom: 100,
-    },
-    suggestedTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#666',
-        marginBottom: 16,
-    },
-    userRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-    },
-    userAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        marginRight: 14,
-    },
-    userName: {
-        flex: 1,
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#111',
-    },
-    radioOuter: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#E0E0E0',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    radioOuterSelected: {
-        backgroundColor: '#8E2DE2',
-        borderColor: '#8E2DE2',
-    },
-    bottomContainer: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        paddingHorizontal: 20,
-        paddingBottom: 40,
-        paddingTop: 20,
-        backgroundColor: '#FAFAFA',
-    },
-    actionBtn: {
-        backgroundColor: '#8E2DE2',
-        paddingVertical: 16,
-        borderRadius: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#8E2DE2',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    actionText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '700',
-    },
+    safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
+    backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EAEAEA', marginRight: 16 },
+    headerTitle: { fontSize: 20, fontWeight: '700', color: '#333' },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F3F3', borderRadius: 14, paddingHorizontal: 15, height: 50, marginHorizontal: 20, marginBottom: 15 },
+    searchInput: { flex: 1, fontSize: 15, color: '#333', marginLeft: 10 },
+    listContent: { paddingHorizontal: 20, paddingBottom: 100 },
+    suggestedTitle: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 15, marginTop: 10 },
+    userRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+    userAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
+    userName: { flex: 1, fontSize: 15, color: '#222', fontWeight: '600' },
+    radioOuter: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#DDD', justifyContent: 'center', alignItems: 'center' },
+    radioOuterSelected: { backgroundColor: '#7B39FD', borderColor: '#7B39FD' },
+    bottomContainer: { padding: 20, position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F5F5F5' },
+    actionBtn: { backgroundColor: '#7B39FD', height: 54, borderRadius: 27, justifyContent: 'center', alignItems: 'center' },
+    actionText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

@@ -11,6 +11,7 @@ import {
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { userService } from '@/services/userService';
 
 export default function BecomeHostScreen() {
   return (
@@ -49,7 +50,14 @@ export default function BecomeHostScreen() {
       <View style={styles.footer}>
         <TouchableOpacity 
           style={styles.homeButton} 
-          onPress={() => router.replace('/(tabs)' as any)}
+          onPress={async () => {
+            try {
+              await userService.patchMyOnboarding(5, true);
+            } catch (err) {
+              console.warn('[BecomeHostScreen] Skip onboarding step 5 failed:', err);
+            }
+            router.replace('/(tabs)' as any);
+          }}
         >
           <Text style={styles.homeButtonText}>Go to Home</Text>
         </TouchableOpacity>
@@ -57,7 +65,7 @@ export default function BecomeHostScreen() {
         <TouchableOpacity
           style={styles.continueButton}
           activeOpacity={0.88}
-          onPress={() => router.push('/(onboarding)/host-application' as any)}
+          onPress={() => router.push('/host-application' as any)}
         >
           <Text style={styles.continueButtonText}>Continue</Text>
         </TouchableOpacity>

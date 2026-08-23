@@ -10,8 +10,21 @@ import {
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { userService } from '@/services/userService';
 
 export default function LocationConfirmedScreen() {
+  const handleNext = async () => {
+    try {
+      try {
+        await userService.patchMyOnboarding(2, true);
+      } catch (err) {
+        console.warn('[LocationConfirmedScreen] Patch onboarding step 2 failed:', err);
+      }
+    } finally {
+      router.push('/(onboarding)/follow-hosts' as any);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -37,7 +50,7 @@ export default function LocationConfirmedScreen() {
         <TouchableOpacity
           style={styles.nextButton}
           activeOpacity={0.88}
-          onPress={() => router.push('/(onboarding)/follow-artists' as any)}
+          onPress={handleNext}
         >
           <Text style={styles.nextButtonText}>Next</Text>
         </TouchableOpacity>

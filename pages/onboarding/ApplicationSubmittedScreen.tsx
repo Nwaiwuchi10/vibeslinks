@@ -9,6 +9,7 @@ import {
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { userService } from '@/services/userService';
 
 export default function ApplicationSubmittedScreen() {
   return (
@@ -23,7 +24,14 @@ export default function ApplicationSubmittedScreen() {
         <TouchableOpacity
           style={styles.homeButton}
           activeOpacity={0.88}
-          onPress={() => router.replace('/(tabs)' as any)}
+          onPress={async () => {
+            try {
+              await userService.patchMyOnboarding(5, true);
+            } catch (err) {
+              console.warn('[ApplicationSubmittedScreen] Patch onboarding step 5 failed:', err);
+            }
+            router.replace('/(tabs)' as any);
+          }}
         >
           <Text style={styles.homeButtonText}>Go to Home</Text>
         </TouchableOpacity>

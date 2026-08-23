@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Dimensions,
     Image,
@@ -10,11 +10,21 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
+import { socketService } from '@/services/socketService';
+import { useAppSelector } from '@/store/hooks';
+import { FloatingHeartsOverlay, FloatingHeartRef } from '@/components/stream/FloatingHeartsOverlay';
+import { FullscreenGiftAnimation, FullscreenGiftRef } from '@/components/stream/FullscreenGiftAnimation';
+import { GiftDrawerModal, VirtualGift } from '@/components/stream/GiftDrawerModal';
+import { PkBattleOverlay } from '@/components/stream/PkBattleOverlay';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,42 +34,74 @@ interface ChatMessage {
     username: string;
     message: string;
     reaction?: string;
+    badge?: string;
+}
+
+interface TopGifter {
+    id: string;
+    name: string;
+    avatarUrl: string;
+    totalCoins: number;
+    badge: string;
 }
 
 export default function LiveDetails() {
+    const { id } = useLocalSearchParams<{ id?: string }>();
+    const authUser = useAppSelector((state) => state.auth.user);
+    
     // Flow States: 'TICKET_MODAL' -> 'PAYMENT_SHEET' -> 'LIVE_STREAM'
-    const [flowState, setFlowState] = useState<'TICKET_MODAL' | 'PAYMENT_SHEET' | 'LIVE_STREAM'>('TICKET_MODAL');
-    const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
+    const [flowState, setFlowState] = useState<'TICKET_MODAL' | 'PAYMENT_SHEET' | 'LIVE_STREAM'>('LIVE_STREAM');
+    const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>('wallet');
     const [isFollowing, setIsFollowing] = useState(false);
     const [showRequestSentModal, setShowRequestSentModal] = useState(false);
-    const [showEndLiveModal, setShowEndLiveModal] = useState(false);
+    const [showGiftDrawer, setShowGiftDrawer] = useState(false);
     const [hasGuestStream, setHasGuestStream] = useState(true);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [reactionCounts, setReactionCounts] = useState({
+    const [loadingDetails, setLoadingDetails] = useState(true);
+    const [streamDetails, setStreamDetails] = useState<any>(null);
+    const [viewerCount, setViewerCount] = useState(41900);
+    const [totalLikes, setTotalLikes] = useState(12400);
+    const [userCoins, setUserCoins] = useState(1450);
+
+    // Pinned Message
+    const [pinnedMessage, setPinnedMessage] = useState<string | null>('🔥 Welcome to the live stream! Tap to like & support!');
+
+    // Top Gifters Leaderboard
+    const [topGifters, setTopGifters] = useState<TopGifter[]>([
+        { id: '1', name: 'Roland', avatarUrl: 'https://i.pravatar.cc/150?img=11', totalCoins: 1200, badge: '🥇' },
+        { id: '2', name: 'Elena', avatarUrl: 'https://i.pravatar.cc/150?img=32', totalCoins: 850, badge: '🥈' },
+        { id: '3', name: 'David', avatarUrl: 'https://i.pravatar.cc/150?img=53', totalCoins: 400, badge: '🥉' },
+    ]);
+
+    // PK Battle State
+    const [isPkActive, setIsPkActive] = useState(false);
+    const [pkScores, setPkScores] = useState({ host1: 1420, host2: 890 });
+
+    const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({
         heart: 12000,
-        smile: 37000,
+        smile: 91000,
         angry: 15000,
-        star: 91000,
+        star: 37000,
         clap: 3000,
     });
 
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
         {
             id: '1',
-            avatar: 'https://i.pravatar.cc/150?img=47',
+            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
             username: '@claudiocardoso',
             message: 'send reaction',
             reaction: '😁',
         },
         {
             id: '2',
-            avatar: 'https://i.pravatar.cc/150?img=12',
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
             username: '@claudiocardoso',
             message: 'Lovely',
         },
         {
             id: '3',
-            avatar: 'https://i.pravatar.cc/150?img=47',
+            avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
             username: '@claudiocardoso',
             message: 'Who else dey vibing tonight',
         },
@@ -67,27 +109,186 @@ export default function LiveDetails() {
     const [newMessage, setNewMessage] = useState('');
     const chatScrollViewRef = useRef<ScrollView>(null);
 
+    // Animation Refs
+    const heartsRef = useRef<FloatingHeartRef>(null);
+    const fullscreenGiftRef = useRef<FullscreenGiftRef>(null);
+
+    useEffect(() => {
+        if (!id) return;
+        
+        // Step 1: Load stream details & top contributors
+        liveStreamService.getStreamDetails(id)
+            .then((data: any) => {
+                setStreamDetails(data);
+                if (data?.viewerCount !== undefined) setViewerCount(data.viewerCount);
+                if (data?.ticketPrice > 0 && !data.hasAccess) {
+                    setFlowState('TICKET_MODAL');
+                } else {
+                    setFlowState('LIVE_STREAM');
+                }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingDetails(false));
+
+        liveStreamService.getTopGifters(id)
+            .then((gifters: any) => {
+                if (Array.isArray(gifters) && gifters.length > 0) {
+                    setTopGifters(gifters);
+                }
+            })
+            .catch(() => {});
+
+        // Step 2: Connect socket and join rooms
+        socketService.connect();
+        socketService.joinRoom(`livestream:${id}`);
+
+        // Step 3: Realtime Listeners
+        socketService.onLikeBurst((data: any) => {
+            heartsRef.current?.addBurst(data?.count || 4);
+            setTotalLikes((prev) => prev + (data?.count || 1));
+        });
+
+        socketService.onGiftSent((data: any) => {
+            fullscreenGiftRef.current?.triggerGift({
+                id: data.id,
+                senderName: data.sender?.name || data.sender?.username || 'Viewer',
+                senderAvatar: data.sender?.avatarUrl,
+                giftName: data.gift?.name || 'Rose',
+                giftIcon: data.gift?.icon || '🌹',
+                coinAmount: data.gift?.coinAmount || 1,
+                count: data.count || 1,
+                animationType: data.gift?.animationType || 'float',
+            });
+            // Append to chat
+            setChatMessages((prev) => [
+                ...prev.slice(-20),
+                {
+                    id: `${Date.now()}_gift`,
+                    avatar: data.sender?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+                    username: `@${data.sender?.username || data.sender?.name || 'Viewer'}`,
+                    message: `sent ${data.gift?.name} ${data.gift?.icon} (x${data.count || 1})`,
+                    badge: '🎁',
+                },
+            ]);
+        });
+
+        socketService.onTopGiftersUpdated((data: any) => {
+            if (Array.isArray(data?.topGifters)) {
+                setTopGifters(data.topGifters);
+            }
+        });
+
+        socketService.onChatPin((data: any) => {
+            if (data?.message) setPinnedMessage(data.message);
+        });
+
+        socketService.onPkBattleStart((data: any) => {
+            setIsPkActive(true);
+            setPkScores({ host1: data.host1Score || 0, host2: data.host2Score || 0 });
+        });
+
+        socketService.onPkBattleScore((data: any) => {
+            setPkScores({ host1: data.host1Score, host2: data.host2Score });
+        });
+
+        socketService.onPkBattleEnd(() => {
+            setIsPkActive(false);
+        });
+
+        socketService.onLivestreamViewerJoined((data: any) => {
+            setViewerCount((prev) => prev + 1);
+            setChatMessages((prev) => [
+                ...prev.slice(-20),
+                {
+                    id: `${Date.now()}_join`,
+                    avatar: data.user?.profilePictureUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+                    username: `@${data.user?.username || data.user?.name || 'Viewer'}`,
+                    message: 'joined the live stream 👋',
+                },
+            ]);
+        });
+
+        socketService.onLiveStreamMessage((msg: any) => {
+            const parsedMsg: ChatMessage = {
+                id: msg.id || String(Math.random()),
+                avatar: msg.senderAvatar || msg.avatar || `https://i.pravatar.cc/100?img=${Math.floor(Math.random() * 50)}`,
+                username: msg.senderName || msg.username || 'Viewer',
+                message: msg.message,
+            };
+            setChatMessages((prev) => [...prev.slice(-20), parsedMsg]);
+            setTimeout(() => chatScrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        });
+
+        return () => {
+            socketService.leaveRoom(`livestream:${id}`);
+            socketService.offLivestreamEvents();
+        };
+    }, [id]);
+
+    const handleTapScreen = (e: any) => {
+        const { locationX, locationY } = e.nativeEvent;
+        heartsRef.current?.addHeart(locationX, locationY);
+        setTotalLikes((prev) => prev + 1);
+
+        if (id) {
+            liveStreamService.sendLikeBurst(id, 1).catch(() => {});
+        }
+    };
+
     const handleSendMessage = () => {
-        if (!newMessage.trim()) return;
-        const msg: ChatMessage = {
+        if (!newMessage.trim() || !id) return;
+        socketService.sendLiveStreamMessage(id, newMessage);
+
+        const localMsg: ChatMessage = {
             id: Date.now().toString(),
-            avatar: 'https://i.pravatar.cc/150?img=33',
-            username: '@you',
+            avatar: authUser?.profilePictureUrl || 'https://i.pravatar.cc/150?img=33',
+            username: authUser?.fullName ? `@${authUser.fullName}` : '@you',
             message: newMessage,
         };
-        setChatMessages((prev) => [...prev, msg]);
+        setChatMessages((prev) => [...prev.slice(-20), localMsg]);
         setNewMessage('');
         setTimeout(() => {
             chatScrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
     };
 
-    const handleReaction = (type: keyof typeof reactionCounts) => {
+    const handleReaction = (emoji: 'love' | 'clap' | 'like' | 'fire') => {
+        if (!id) return;
+        socketService.sendLiveStreamReaction(id, emoji);
+
+        const mappedKey = emoji === 'love' ? 'heart' : emoji === 'like' ? 'smile' : emoji;
         setReactionCounts((prev) => ({
             ...prev,
-            [type]: prev[type] + 1,
+            [mappedKey]: (prev[mappedKey] || 0) + 1,
         }));
+        heartsRef.current?.addHeart();
     };
+
+    const handleSendGift = async (gift: VirtualGift, count: number) => {
+        setShowGiftDrawer(false);
+        if (!id) return;
+        try {
+            setUserCoins((prev) => Math.max(0, prev - gift.coinAmount * count));
+            await liveStreamService.sendGift(id, gift.id, count);
+        } catch {}
+    };
+
+    const handleBuyAccess = async () => {
+        if (!id) return;
+        setLoadingDetails(true);
+        try {
+            await liveStreamService.checkAccess(id, paymentMethod);
+            setFlowState('LIVE_STREAM');
+            Alert.alert('Access Granted', 'You now have access to this stream.');
+        } catch (err: any) {
+            Alert.alert('Payment Failed', err.response?.data?.message || 'Failed to complete transaction.');
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    const hostName = streamDetails?.creator?.name || streamDetails?.creatorName || 'Olivia';
+    const hostAvatar = streamDetails?.creator?.profilePictureUrl || streamDetails?.creatorAvatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
 
     return (
         <View style={styles.container}>
@@ -97,30 +298,53 @@ export default function LiveDetails() {
                 style={styles.backgroundImage}
                 resizeMode="cover"
             >
-                {/* Overlay layer for immersive look */}
-                <View style={styles.darkOverlay} />
+                {/* Tap anywhere on stream for floating hearts */}
+                <TouchableWithoutFeedback onPress={handleTapScreen}>
+                    <View style={StyleSheet.absoluteFillObject} />
+                </TouchableWithoutFeedback>
 
-                <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-                    {/* Header bar (always visible at top of live) */}
+                {/* Overlay layer for immersive look */}
+                <View style={styles.darkOverlay} pointerEvents="none" />
+
+                {/* Floating Hearts Particle Overlay */}
+                <FloatingHeartsOverlay ref={heartsRef} />
+
+                {/* Fullscreen Gift Splash Animation */}
+                <FullscreenGiftAnimation ref={fullscreenGiftRef} />
+
+                {/* Live PK Battle Overlay */}
+                <PkBattleOverlay
+                    visible={isPkActive}
+                    host1Name={hostName}
+                    host1Avatar={hostAvatar}
+                    host1Score={pkScores.host1}
+                    host2Name="cardoso"
+                    host2Avatar="https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150"
+                    host2Score={pkScores.host2}
+                    isHost={false}
+                    onSendBoost={() => setShowGiftDrawer(true)}
+                />
+
+                <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']} pointerEvents="box-none">
+                    {/* Header Bar */}
                     <View style={styles.header}>
-                        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.back()}>
-                            <Ionicons name="arrow-back" size={22} color="#FFF" />
+                        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.back()} activeOpacity={0.8}>
+                            <Ionicons name="arrow-back" size={20} color="#FFF" />
                         </TouchableOpacity>
 
+                        {/* Creator Pill */}
                         <View style={styles.creatorPill}>
-                            <Image
-                                source={{ uri: 'https://i.pravatar.cc/150?img=43' }}
-                                style={styles.creatorAvatar}
-                            />
+                            <Image source={{ uri: hostAvatar }} style={styles.creatorAvatar} />
                             <View style={styles.creatorInfo}>
-                                <Text style={styles.creatorName}>Olivia</Text>
+                                <Text style={styles.creatorName} numberOfLines={1}>{hostName}</Text>
                                 <View style={styles.creatorLikesRow}>
-                                    <Ionicons name="heart" size={10} color="#FFF" />
-                                    <Text style={styles.creatorLikesText}>1.1k</Text>
+                                    <Ionicons name="heart" size={11} color="#FF2E93" />
+                                    <Text style={styles.creatorLikesText}> {totalLikes}</Text>
                                 </View>
                             </View>
                             <TouchableOpacity
                                 style={[styles.followBtn, isFollowing && styles.followingBtn]}
+                                activeOpacity={0.8}
                                 onPress={() => setIsFollowing(!isFollowing)}
                             >
                                 <Text style={styles.followBtnText}>
@@ -129,9 +353,25 @@ export default function LiveDetails() {
                             </TouchableOpacity>
                         </View>
 
-                        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/live-creators')}>
-                            <Ionicons name="chevron-down" size={22} color="#FFF" />
-                        </TouchableOpacity>
+                        {/* Top 3 Gifters Leaderboard */}
+                        <View style={styles.topGiftersRow}>
+                            {topGifters.map((gifter) => (
+                                <View key={gifter.id} style={styles.gifterBadgeContainer}>
+                                    <Image source={{ uri: gifter.avatarUrl }} style={styles.gifterAvatar} />
+                                    <Text style={styles.gifterRankIcon}>{gifter.badge}</Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* Right header actions */}
+                        <View style={styles.headerRightGroup}>
+                            <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/live-creators' as any)} activeOpacity={0.8}>
+                                <MaterialCommunityIcons name="dots-grid" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.back()} activeOpacity={0.8}>
+                                <Ionicons name="chevron-down" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     {/* LIVE STREAM MAIN VIEW */}
@@ -139,10 +379,19 @@ export default function LiveDetails() {
                         <KeyboardAvoidingView
                             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                             style={styles.liveFlexContainer}
+                            pointerEvents="box-none"
                         >
-                            <View style={styles.streamBody}>
+                            <View style={styles.streamBody} pointerEvents="box-none">
                                 {/* Left Side - Comments overlay */}
-                                <View style={styles.leftChatArea}>
+                                <View style={styles.leftChatArea} pointerEvents="box-none">
+                                    {/* Pinned Message */}
+                                    {pinnedMessage && (
+                                        <View style={styles.pinnedBanner}>
+                                            <Ionicons name="pin" size={12} color="#FFD700" style={{ marginRight: 4 }} />
+                                            <Text style={styles.pinnedText} numberOfLines={2}>{pinnedMessage}</Text>
+                                        </View>
+                                    )}
+
                                     <ScrollView
                                         ref={chatScrollViewRef}
                                         showsVerticalScrollIndicator={false}
@@ -153,7 +402,10 @@ export default function LiveDetails() {
                                             <View key={msg.id} style={styles.chatBubble}>
                                                 <Image source={{ uri: msg.avatar }} style={styles.chatAvatar} />
                                                 <View style={styles.chatTextContainer}>
-                                                    <Text style={styles.chatUser}>{msg.username}</Text>
+                                                    <View style={styles.chatUserRow}>
+                                                        <Text style={styles.chatUser}>{msg.username}</Text>
+                                                        {msg.badge && <Text style={styles.chatBadge}>{msg.badge}</Text>}
+                                                    </View>
                                                     <View style={styles.chatMessageRow}>
                                                         <Text style={styles.chatMessageText}>{msg.message}</Text>
                                                         {msg.reaction && (
@@ -167,63 +419,65 @@ export default function LiveDetails() {
                                 </View>
 
                                 {/* Right Panel - Request & Guest Streams */}
-                                <View style={styles.rightPanel}>
+                                <View style={styles.rightPanel} pointerEvents="box-none">
                                     {/* Expand Button */}
                                     <TouchableOpacity
                                         style={styles.expandButtonCircle}
+                                        activeOpacity={0.8}
                                         onPress={() => setIsFullscreen(true)}
                                     >
-                                        <Ionicons name="resize" size={18} color="#FFF" />
+                                        <Ionicons name="expand-outline" size={20} color="#FFF" />
                                     </TouchableOpacity>
 
                                     {/* Request card */}
                                     <TouchableOpacity
                                         style={styles.requestCard}
-                                        onPress={() => setShowRequestSentModal(true)}
+                                        activeOpacity={0.85}
+                                        onPress={() => {
+                                            if (id) {
+                                                liveStreamService.requestWatchAccess(id, 'I want to join as co-host').catch(() => {});
+                                            }
+                                            setShowRequestSentModal(true);
+                                        }}
                                     >
-                                        <Text style={styles.requestPlus}>+</Text>
+                                        <Ionicons name="add" size={24} color="#FFF" />
                                         <Text style={styles.requestText}>Request</Text>
                                     </TouchableOpacity>
 
-                                    {/* Guest feed mockup */}
+                                    {/* Guest video tile */}
                                     {hasGuestStream && (
                                         <View style={styles.guestCard}>
-                                            <ImageBackground
-                                                source={{ uri: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150' }}
+                                            <Image
+                                                source={{ uri: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' }}
                                                 style={styles.guestBg}
-                                                imageStyle={{ borderRadius: 16 }}
-                                            >
-                                                <TouchableOpacity
-                                                    style={styles.guestPlusBadge}
-                                                    onPress={() => setHasGuestStream(false)}
-                                                >
-                                                    <Text style={styles.guestNameText}>cardoso +</Text>
-                                                </TouchableOpacity>
-                                            </ImageBackground>
+                                            />
+                                            <View style={styles.guestPlusBadge}>
+                                                <Text style={styles.guestNameText}>cardoso +</Text>
+                                            </View>
                                         </View>
                                     )}
                                 </View>
                             </View>
 
                             {/* Bottom stats and interactive reactions */}
-                            <View style={styles.statsAndReactionsRow}>
+                            <View style={styles.statsAndReactionsRow} pointerEvents="box-none">
                                 <View style={styles.watchingBadge}>
-                                    <Ionicons name="people-outline" size={12} color="#FFF" style={{ marginRight: 4 }} />
-                                    <Text style={styles.watchingText}>41.9K Watching</Text>
+                                    <MaterialCommunityIcons name="account-group-outline" size={14} color="#FFF" style={{ marginRight: 4 }} />
+                                    <Text style={styles.watchingText}>{(viewerCount / 1000).toFixed(1)}K Watching</Text>
                                 </View>
-
+ 
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reactionsScrollView}>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('smile')}>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('like')}>
                                         <Text style={styles.reactionText}>😍 37k</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('heart')}>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('love')}>
                                         <Text style={styles.reactionText}>❤️ 12k</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('angry')}>
-                                        <Text style={styles.reactionText}>😡 15k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('angry' as any)}>
+                                        <Text style={styles.reactionText}>😤 15k</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('star')}>
-                                        <Text style={styles.reactionText}>🤩 91k</Text>
+                                    <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('fire')}>
+                                        <Text style={styles.reactionText}>😁 91k</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.reactionPill} onPress={() => handleReaction('clap')}>
                                         <Text style={styles.reactionText}>👏 3k</Text>
@@ -231,7 +485,7 @@ export default function LiveDetails() {
                                 </ScrollView>
                             </View>
 
-                            {/* Bottom Input Area */}
+                            {/* Bottom Input & Gift Launcher Bar */}
                             <View style={styles.inputContainer}>
                                 <TextInput
                                     style={styles.messageInput}
@@ -241,17 +495,35 @@ export default function LiveDetails() {
                                     onChangeText={setNewMessage}
                                     onSubmitEditing={handleSendMessage}
                                 />
-                                <TouchableOpacity style={styles.inputPlainButton} onPress={() => handleReaction('heart')}>
-                                    <Ionicons name="heart-outline" size={26} color="#FFF" />
+                                {/* Gift Drawer Launcher */}
+                                <TouchableOpacity
+                                    style={styles.giftIconBtn}
+                                    activeOpacity={0.8}
+                                    onPress={() => setShowGiftDrawer(true)}
+                                >
+                                    <Ionicons name="gift" size={24} color="#FFD700" />
                                 </TouchableOpacity>
-                                <TouchableOpacity style={styles.inputPlainButton} onPress={handleSendMessage}>
-                                    <Ionicons name="paper-plane-outline" size={24} color="#FFF" />
+
+                                <TouchableOpacity style={styles.inputPlainButton} onPress={() => handleReaction('love')} activeOpacity={0.8}>
+                                    <Ionicons name="heart-outline" size={24} color="#FFF" />
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.inputPlainButton} onPress={handleSendMessage} activeOpacity={0.8}>
+                                    <Ionicons name="paper-plane-outline" size={22} color="#FFF" />
                                 </TouchableOpacity>
                             </View>
                         </KeyboardAvoidingView>
                     )}
                 </SafeAreaView>
             </ImageBackground>
+
+            {/* Gift Drawer Modal */}
+            <GiftDrawerModal
+                visible={showGiftDrawer}
+                userCoins={userCoins}
+                onClose={() => setShowGiftDrawer(false)}
+                onSendGift={handleSendGift}
+            />
 
             {/* FULLSCREEN mode overlay */}
             {isFullscreen && (
@@ -261,7 +533,6 @@ export default function LiveDetails() {
                         style={styles.fullscreenImage}
                         resizeMode="cover"
                     >
-                        {/* Collapse button — bottom right */}
                         <SafeAreaView style={styles.fullscreenSafeArea} edges={['top', 'bottom']}>
                             <TouchableOpacity
                                 style={styles.collapseBtn}
@@ -308,7 +579,6 @@ export default function LiveDetails() {
 
                         <Text style={styles.paymentAmount}>₦186,000</Text>
 
-                        {/* Price breakdown */}
                         <View style={styles.priceBreakdown}>
                             <View style={styles.priceRow}>
                                 <Text style={styles.priceLabel}>Access</Text>
@@ -324,47 +594,45 @@ export default function LiveDetails() {
                             </View>
                         </View>
 
-                        {/* Payment Method Selector */}
                         <View style={styles.paymentHeadingRow}>
                             <Text style={styles.paymentHeading}>Payment Method</Text>
                             <Ionicons name="chevron-forward" size={14} color="#8E2DE2" />
                         </View>
-
                         <TouchableOpacity
                             style={styles.paymentMethodOption}
-                            onPress={() => setPaymentMethod('card')}
+                            onPress={() => setPaymentMethod('stripe')}
                         >
-                            <Text style={styles.paymentOptionLabel}>Debit Card</Text>
+                            <Text style={styles.paymentOptionLabel}>Debit Card (Stripe)</Text>
                             <View style={styles.radioOuter}>
-                                {paymentMethod === 'card' && <View style={styles.radioInner} />}
+                                {paymentMethod === 'stripe' && <View style={styles.radioInner} />}
                             </View>
                         </TouchableOpacity>
 
                         <TouchableOpacity
                             style={styles.paymentMethodOption}
-                            onPress={() => setPaymentMethod('transfer')}
+                            onPress={() => setPaymentMethod('wallet')}
                         >
-                            <Text style={styles.paymentOptionLabel}>Transfer</Text>
+                            <Text style={styles.paymentOptionLabel}>VibezLink Wallet</Text>
                             <View style={styles.radioOuter}>
-                                {paymentMethod === 'transfer' && <View style={styles.radioInner} />}
+                                {paymentMethod === 'wallet' && <View style={styles.radioInner} />}
                             </View>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.payBtn} onPress={() => setFlowState('LIVE_STREAM')}>
+                        <TouchableOpacity style={styles.payBtn} onPress={handleBuyAccess}>
                             <Text style={styles.payBtnText}>Pay</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
             )}
 
-            {/* Guest Request Pending Modal */}
+            {/* Guest Request Sent Modal (Screenshot 5) */}
             {showRequestSentModal && (
                 <View style={styles.modalBackdrop}>
                     <View style={styles.guestRequestCard}>
-                        {/* Overlapping Avatars - host on left, viewer on right */}
+                        {/* Two Avatars with dots */}
                         <View style={styles.guestAvatarsRow}>
                             <Image
-                                source={{ uri: 'https://i.pravatar.cc/150?img=43' }}
+                                source={{ uri: authUser?.profilePictureUrl || 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' }}
                                 style={styles.guestAvatarLeft}
                             />
                             <View style={styles.guestDotContainer}>
@@ -372,54 +640,26 @@ export default function LiveDetails() {
                                 <View style={styles.guestDotPurple} />
                             </View>
                             <Image
-                                source={{ uri: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' }}
+                                source={{ uri: hostAvatar }}
                                 style={styles.guestAvatarRight}
                             />
                         </View>
 
-                        <Text style={styles.guestRequestTitle}>Guest request Pending</Text>
+                        <Text style={styles.guestRequestTitle}>Guest request sent</Text>
                         <Text style={styles.guestRequestSubtitle}>1 viewer is requesting</Text>
 
-                        <View style={styles.guestButtonsRow}>
-                            <TouchableOpacity
-                                style={styles.cancelRequestBtn}
-                                onPress={() => setShowRequestSentModal(false)}
-                            >
-                                <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.acceptRequestBtn}
-                                onPress={() => setShowRequestSentModal(false)}
-                            >
-                                <Text style={styles.acceptRequestBtnText}>Accept request</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            )}
-
-            {/* End Live Session Modal */}
-            {showEndLiveModal && (
-                <View style={styles.modalBackdrop}>
-                    <View style={styles.endLiveCard}>
-                        <Text style={styles.endLiveTitle}>End Live Session?</Text>
-                        <Text style={styles.endLiveSubtitle}>
-                            Once ended, viewers will no longer be able to join this session.
-                        </Text>
-                        <View style={styles.endLiveButtonsRow}>
-                            <TouchableOpacity
-                                style={styles.endLiveBtn}
-                                onPress={() => router.back()}
-                            >
-                                <Text style={styles.endLiveBtnText}>End Live</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.endLiveCancelBtn}
-                                onPress={() => setShowEndLiveModal(false)}
-                            >
-                                <Text style={styles.endLiveCancelBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <TouchableOpacity
+                            style={styles.cancelRequestBtnFull}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                                if (id) {
+                                    liveStreamService.cancelWatchRequest(id).catch(() => {});
+                                }
+                                setShowRequestSentModal(false);
+                            }}
+                        >
+                            <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             )}
@@ -463,7 +703,7 @@ const styles = StyleSheet.create({
     },
     darkOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+        backgroundColor: 'rgba(0, 0, 0, 0.18)',
     },
     safeArea: {
         flex: 1,
@@ -477,17 +717,19 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
     },
     headerCircleBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.15)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     creatorPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
         paddingLeft: 4,
         paddingRight: 6,
         paddingVertical: 4,
@@ -502,11 +744,11 @@ const styles = StyleSheet.create({
     },
     creatorInfo: {
         marginLeft: 8,
-        marginRight: 12,
+        marginRight: 10,
     },
     creatorName: {
         color: '#FFF',
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '700',
     },
     creatorLikesRow: {
@@ -515,15 +757,15 @@ const styles = StyleSheet.create({
         marginTop: 1,
     },
     creatorLikesText: {
-        color: 'rgba(255,255,255,0.8)',
+        color: '#FF2E93',
         fontSize: 10,
-        marginLeft: 3,
-        fontWeight: '600',
+        marginLeft: 2,
+        fontWeight: '800',
     },
     followBtn: {
         backgroundColor: '#8E2DE2',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 6,
         borderRadius: 16,
     },
     followingBtn: {
@@ -531,8 +773,34 @@ const styles = StyleSheet.create({
     },
     followBtnText: {
         color: '#FFF',
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '700',
+    },
+    topGiftersRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    gifterBadgeContainer: {
+        position: 'relative',
+    },
+    gifterAvatar: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: '#FFD700',
+    },
+    gifterRankIcon: {
+        position: 'absolute',
+        bottom: -4,
+        right: -4,
+        fontSize: 9,
+    },
+    headerRightGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     liveFlexContainer: {
         flex: 1,
@@ -544,12 +812,29 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         justifyContent: 'space-between',
         paddingHorizontal: 16,
-        marginBottom: 10,
+        marginBottom: 8,
     },
     leftChatArea: {
         flex: 1,
         maxHeight: height * 0.35,
         marginRight: 10,
+    },
+    pinnedBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#FFD700',
+    },
+    pinnedText: {
+        color: '#FFD700',
+        fontSize: 11,
+        fontWeight: '700',
+        flex: 1,
     },
     chatScrollView: {
         flex: 1,
@@ -560,28 +845,36 @@ const styles = StyleSheet.create({
     chatBubble: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.45)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.15)',
-        borderRadius: 30,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        marginBottom: 8,
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: 24,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        marginBottom: 6,
         alignSelf: 'flex-start',
         maxWidth: '95%',
     },
     chatAvatar: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
     },
     chatTextContainer: {
         marginLeft: 8,
     },
+    chatUserRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     chatUser: {
         color: 'rgba(255, 255, 255, 0.9)',
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '700',
+    },
+    chatBadge: {
+        fontSize: 11,
+        marginLeft: 4,
     },
     chatMessageRow: {
         flexDirection: 'row',
@@ -594,41 +887,48 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     chatReactionText: {
-        fontSize: 14,
-        marginLeft: 6,
+        fontSize: 13,
+        marginLeft: 4,
     },
     rightPanel: {
-        width: 100,
+        width: 90,
         alignItems: 'center',
         justifyContent: 'flex-end',
+        gap: 10,
+    },
+    expandButtonCircle: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.15)',
     },
     requestCard: {
-        width: 90,
-        height: 90,
+        width: 82,
+        height: 82,
         borderRadius: 18,
         backgroundColor: 'rgba(0,0,0,0.5)',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.2)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 12,
-    },
-    requestPlus: {
-        color: '#FFF',
-        fontSize: 26,
-        fontWeight: '300',
     },
     requestText: {
         color: '#FFF',
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
         marginTop: 2,
     },
     guestCard: {
-        width: 90,
-        height: 120,
+        width: 82,
+        height: 110,
         borderRadius: 16,
         overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     guestBg: {
         width: '100%',
@@ -638,7 +938,7 @@ const styles = StyleSheet.create({
     guestPlusBadge: {
         backgroundColor: 'rgba(0,0,0,0.5)',
         alignSelf: 'stretch',
-        paddingVertical: 4,
+        paddingVertical: 3,
         alignItems: 'center',
     },
     guestNameText: {
@@ -650,7 +950,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
-        marginBottom: 12,
+        marginBottom: 10,
     },
     watchingBadge: {
         flexDirection: 'row',
@@ -659,12 +959,12 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         paddingHorizontal: 8,
         paddingVertical: 5,
-        marginRight: 8,
+        marginRight: 6,
     },
     watchingText: {
         color: '#FFF',
         fontSize: 11,
-        fontWeight: '600',
+        fontWeight: '700',
     },
     reactionsScrollView: {
         flex: 1,
@@ -679,7 +979,7 @@ const styles = StyleSheet.create({
     reactionText: {
         color: '#FFF',
         fontSize: 11,
-        fontWeight: '600',
+        fontWeight: '700',
     },
     inputContainer: {
         flexDirection: 'row',
@@ -689,41 +989,39 @@ const styles = StyleSheet.create({
     },
     messageInput: {
         flex: 1,
-        height: 48,
+        height: 46,
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        borderRadius: 24,
-        paddingHorizontal: 18,
+        borderRadius: 23,
+        paddingHorizontal: 16,
         color: '#FFF',
-        fontSize: 14,
+        fontSize: 13,
         marginRight: 8,
+    },
+    giftIconBtn: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: 'rgba(255, 215, 0, 0.2)',
+        borderWidth: 1.5,
+        borderColor: '#FFD700',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 4,
     },
     inputPlainButton: {
         width: 36,
         height: 36,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 8,
+        marginLeft: 4,
     },
-    expandButtonCircle: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-
-    // Modal Background Backdrop
     modalBackdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.65)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 999,
     },
-
-    // Ticket Available Modal
     ticketCard: {
         width: width * 0.86,
         backgroundColor: '#FFF',
@@ -738,40 +1036,37 @@ const styles = StyleSheet.create({
         right: 16,
         width: 32,
         height: 32,
-        borderRadius: 16,
-        backgroundColor: '#F3F4F6',
         justifyContent: 'center',
         alignItems: 'center',
     },
     ticketIconContainer: {
         width: 64,
         height: 64,
-        borderRadius: 16,
+        borderRadius: 32,
         backgroundColor: '#F3E8FF',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
-        marginTop: 12,
     },
     ticketTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+        fontSize: 20,
+        fontWeight: '800',
         color: '#111827',
         marginBottom: 8,
     },
     ticketSubtitle: {
-        fontSize: 14,
+        fontSize: 13,
         color: '#6B7280',
         textAlign: 'center',
         lineHeight: 20,
-        marginBottom: 24,
-        paddingHorizontal: 10,
+        marginBottom: 20,
     },
     buyAccessBtn: {
-        backgroundColor: '#1F2937',
-        borderRadius: 16,
+        backgroundColor: '#8E2DE2',
+        borderRadius: 20,
+        paddingVertical: 14,
+        paddingHorizontal: 28,
         width: '100%',
-        paddingVertical: 16,
         alignItems: 'center',
     },
     buyAccessBtnText: {
@@ -779,149 +1074,142 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '700',
     },
-
-    // Payment Sheet Modal
     paymentSheet: {
-        width: '100%',
+        width: width * 0.9,
         backgroundColor: '#FFF',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
+        borderRadius: 28,
         padding: 24,
-        position: 'absolute',
-        bottom: 0,
     },
     paymentAmount: {
-        fontSize: 32,
-        fontWeight: '800',
-        color: '#8E2DE2',
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#111827',
         textAlign: 'center',
-        marginTop: 20,
-        marginBottom: 24,
+        marginVertical: 12,
     },
     priceBreakdown: {
         backgroundColor: '#F9FAFB',
         borderRadius: 16,
-        padding: 16,
-        marginBottom: 20,
+        padding: 14,
+        marginBottom: 16,
     },
     priceRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 10,
+        marginBottom: 8,
     },
     priceRowTotal: {
         borderTopWidth: 1,
         borderColor: '#E5E7EB',
-        paddingTop: 10,
+        paddingTop: 8,
         marginBottom: 0,
     },
     priceLabel: {
-        fontSize: 14,
         color: '#6B7280',
+        fontSize: 13,
     },
     priceValue: {
-        fontSize: 14,
-        fontWeight: '700',
         color: '#111827',
+        fontWeight: '700',
+        fontSize: 13,
     },
     priceLabelTotal: {
-        fontSize: 14,
-        fontWeight: '700',
         color: '#111827',
+        fontWeight: '800',
+        fontSize: 14,
     },
     priceValueTotal: {
+        color: '#8E2DE2',
+        fontWeight: '900',
         fontSize: 14,
-        fontWeight: '800',
-        color: '#111827',
     },
     paymentHeadingRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 8,
     },
     paymentHeading: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '700',
-        color: '#8E2DE2',
+        color: '#374151',
         marginRight: 4,
     },
     paymentMethodOption: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 16,
+        paddingVertical: 12,
         borderBottomWidth: 1,
         borderColor: '#F3F4F6',
     },
     paymentOptionLabel: {
-        fontSize: 15,
+        fontSize: 14,
+        color: '#374151',
         fontWeight: '600',
-        color: '#6B7280',
     },
     radioOuter: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
         borderWidth: 2,
         borderColor: '#8E2DE2',
         justifyContent: 'center',
         alignItems: 'center',
     },
     radioInner: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
         backgroundColor: '#8E2DE2',
     },
     payBtn: {
         backgroundColor: '#8E2DE2',
-        borderRadius: 24,
-        paddingVertical: 16,
+        borderRadius: 20,
+        paddingVertical: 14,
         alignItems: 'center',
-        marginTop: 24,
+        marginTop: 16,
     },
     payBtnText: {
         color: '#FFF',
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '700',
     },
-
-    // Guest Request Pending Card
     guestRequestCard: {
         width: width * 0.88,
-        backgroundColor: '#374151',
+        backgroundColor: '#1E2026',
         borderRadius: 28,
         padding: 24,
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     guestAvatarsRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 16,
-        marginTop: 8,
     },
     guestAvatarLeft: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        borderWidth: 3,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        borderWidth: 2.5,
         borderColor: '#FFF',
-        marginRight: -8,
+        marginRight: -6,
         zIndex: 2,
     },
     guestDotContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         zIndex: 3,
-        paddingHorizontal: 6,
+        paddingHorizontal: 4,
     },
     guestDotSmall: {
-        width: 5,
-        height: 5,
-        borderRadius: 2.5,
-        backgroundColor: '#9CA3AF',
-        marginRight: 3,
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#FFF',
+        marginRight: 4,
     },
     guestDotPurple: {
         width: 10,
@@ -930,107 +1218,35 @@ const styles = StyleSheet.create({
         backgroundColor: '#8E2DE2',
     },
     guestAvatarRight: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        borderWidth: 3,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        borderWidth: 2.5,
         borderColor: '#FFF',
-        marginLeft: -8,
+        marginLeft: -6,
         zIndex: 1,
     },
     guestRequestTitle: {
         fontSize: 18,
-        fontWeight: '700',
+        fontWeight: '800',
         color: '#FFF',
-        marginBottom: 6,
-        textAlign: 'center',
+        marginBottom: 4,
     },
     guestRequestSubtitle: {
-        fontSize: 14,
+        fontSize: 13,
         color: '#9CA3AF',
-        marginBottom: 24,
-        textAlign: 'center',
+        marginBottom: 22,
     },
-    guestButtonsRow: {
-        flexDirection: 'row',
+    cancelRequestBtnFull: {
         width: '100%',
-        gap: 12,
-    },
-    cancelRequestBtn: {
-        flex: 1,
-        backgroundColor: '#E5E7EB',
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
         borderRadius: 16,
-        paddingVertical: 16,
+        paddingVertical: 14,
         alignItems: 'center',
     },
     cancelRequestBtnText: {
-        color: '#111827',
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    acceptRequestBtn: {
-        flex: 1,
-        backgroundColor: '#8E2DE2',
-        borderRadius: 16,
-        paddingVertical: 16,
-        alignItems: 'center',
-    },
-    acceptRequestBtnText: {
         color: '#FFF',
         fontSize: 14,
-        fontWeight: '700',
-    },
-
-    // End Live Session Modal
-    endLiveCard: {
-        width: width * 0.88,
-        backgroundColor: '#374151',
-        borderRadius: 28,
-        padding: 28,
-        alignItems: 'center',
-    },
-    endLiveTitle: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: '#FFF',
-        marginBottom: 12,
-        textAlign: 'center',
-    },
-    endLiveSubtitle: {
-        fontSize: 14,
-        color: '#9CA3AF',
-        textAlign: 'center',
-        lineHeight: 22,
-        marginBottom: 28,
-        paddingHorizontal: 8,
-    },
-    endLiveButtonsRow: {
-        flexDirection: 'row',
-        width: '100%',
-        gap: 12,
-    },
-    endLiveBtn: {
-        flex: 1,
-        backgroundColor: '#E9174B',
-        borderRadius: 20,
-        paddingVertical: 18,
-        alignItems: 'center',
-    },
-    endLiveBtnText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    endLiveCancelBtn: {
-        flex: 1,
-        backgroundColor: '#E5E7EB',
-        borderRadius: 20,
-        paddingVertical: 18,
-        alignItems: 'center',
-    },
-    endLiveCancelBtnText: {
-        color: '#111827',
-        fontSize: 16,
         fontWeight: '700',
     },
 });

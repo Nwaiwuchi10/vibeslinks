@@ -14,19 +14,23 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { hostService } from '@/services/hostService';
+import { Alert, ActivityIndicator } from 'react-native';
 
 const { width } = Dimensions.get('window');
 const SLIDER_WIDTH = width - 40; // width padding
 
 export default function BudgetDurationMain() {
   const router = useRouter();
+  const { eventId, campaignType } = useLocalSearchParams<{ eventId?: string; campaignType?: string }>();
 
   // State values matching screenshots
   const [dailyBudget, setDailyBudget] = useState(431000);
   const [duration, setDuration] = useState(15);
   const [paymentVisible, setPaymentVisible] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet'>('stripe');
+  const [isPaying, setIsPaying] = useState(false);
 
   // Sliders max-min ranges
   const minBudget = 1000;
@@ -283,45 +287,80 @@ export default function BudgetDurationMain() {
             <View style={styles.optionsContainer}>
               <TouchableOpacity
                 style={styles.optionRow}
-                onPress={() => setPaymentMethod('card')}
+                onPress={() => setPaymentMethod('stripe')}
                 activeOpacity={0.7}
               >
-                <Text style={styles.optionText}>Debit Card</Text>
-                <View style={[styles.radioOuter, paymentMethod === 'card' && styles.radioOuterActive]}>
-                  {paymentMethod === 'card' && <View style={styles.radioInner} />}
+                <Text style={styles.optionText}>Debit Card (Stripe)</Text>
+                <View style={[styles.radioOuter, paymentMethod === 'stripe' && styles.radioOuterActive]}>
+                  {paymentMethod === 'stripe' && <View style={styles.radioInner} />}
                 </View>
               </TouchableOpacity>
-
+ 
               <TouchableOpacity
                 style={styles.optionRow}
-                onPress={() => setPaymentMethod('transfer')}
+                onPress={() => setPaymentMethod('wallet')}
                 activeOpacity={0.7}
               >
-                <Text style={styles.optionText}>Transfer</Text>
-                <View style={[styles.radioOuter, paymentMethod === 'transfer' && styles.radioOuterActive]}>
-                  {paymentMethod === 'transfer' && <View style={styles.radioInner} />}
+                <Text style={styles.optionText}>VibezLink Wallet</Text>
+                <View style={[styles.radioOuter, paymentMethod === 'wallet' && styles.radioOuterActive]}>
+                  {paymentMethod === 'wallet' && <View style={styles.radioInner} />}
                 </View>
               </TouchableOpacity>
             </View>
 
             {/* Pay Button */}
             <TouchableOpacity
-              style={styles.payBtn}
+              style={[styles.payBtn, isPaying && { opacity: 0.7 }]}
               activeOpacity={0.85}
-              onPress={() => {
-                setPaymentVisible(false);
-                router.push({
-                  pathname: '/dashboard/campaign-success',
-                  params: {
-                    eventTitle: 'Can You see my cute face',
-                    totalCost: totalAdBudget.toString(),
-                    dailyBudget: dailyBudget.toString(),
-                    duration: duration.toString(),
-                  },
-                });
+              disabled={isPaying}
+              onPress={async () => {
+                if (isPaying) return;
+                setIsPaying(true);
+                try {
+                  const evId = eventId || 'demo_event_id';
+                  const cType = campaignType || 'standard';
+
+                  // Step 1: Create campaign with payment method
+                  const result = await hostService.createCampaign({
+                    eventId: evId,
+                    campaignType: cType,
+                    budget: totalAdBudget,
+                    durationDays: duration,
+                    paymentMethod: paymentMethod,
+                  });
+
+                  const campaignId = result?.campaign?.id || result?.id;
+                  
+                  // Step 2: Confirm campaign payment
+                  if (campaignId) {
+                    await hostService.confirmCampaignPayment(campaignId, {
+                      paymentMethod: paymentMethod,
+                      stripePaymentIntentId: paymentMethod === 'stripe' ? 'pi_mock_campaign_success' : undefined,
+                    });
+                  }
+
+                  setPaymentVisible(false);
+                  router.push({
+                    pathname: '/dashboard/campaign-success',
+                    params: {
+                      eventTitle: result?.campaign?.eventTitle || 'Your Event Campaign',
+                      totalCost: totalAdBudget.toString(),
+                      dailyBudget: dailyBudget.toString(),
+                      duration: duration.toString(),
+                    },
+                  } as any);
+                } catch (err: any) {
+                  Alert.alert('Payment Failed', err.response?.data?.message || err?.message || 'Failed to create campaign. Please try again.');
+                } finally {
+                  setIsPaying(false);
+                }
               }}
             >
-              <Text style={styles.payBtnText}>Pay</Text>
+              {isPaying ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.payBtnText}>Pay</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>

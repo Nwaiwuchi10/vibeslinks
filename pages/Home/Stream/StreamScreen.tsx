@@ -1,47 +1,64 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  SafeAreaView,
-  Dimensions,
-} from 'react-native';
+import { homeService } from '@/services/homeService';
+import { liveStreamService } from '@/services/liveStreamService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
 const QUICK_ACTIONS = [
   { id: '1', name: 'Go Live', icon: 'video', color: '#8E2DE2' },
+  { id: '5', name: 'Create Post', icon: 'pencil-box-multiple', color: '#7B2FFF' },
+  { id: '6', name: 'Add Story', icon: 'circle-slice-8', color: '#FF6B35' },
   { id: '2', name: 'Create Event', icon: 'file-document', color: '#0082FF' },
   { id: '3', name: 'Radio FM', icon: 'microphone-variant', color: '#6BB100' },
   { id: '4', name: 'Watch Stream', icon: 'television-play', color: '#FF006B' },
 ];
 
-const STREAM_FEED = [
-  { 
-    id: '1', 
-    user: 'Olivia', 
-    likes: '1.1k', 
-    type: 'Paid', 
-    avatar: 'https://i.pravatar.cc/100?img=11', 
-    image: require('../../../assets/images/artist_event.png') 
-  },
-  { 
-    id: '2', 
-    user: 'Roland', 
-    likes: '9.4k', 
-    type: 'Free', 
-    avatar: 'https://i.pravatar.cc/100?img=12', 
-    image: require('../../../assets/images/tiger_event.png') 
-  },
-];
-
 const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCreateEventPress: () => void }) => {
+  const [feed, setFeed] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [advert, setAdvert] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchFeed = async () => {
+      try {
+        const [feedData, adverts] = await Promise.allSettled([
+          liveStreamService.getWatchFeed(),
+          homeService.getAdverts(),
+        ]);
+        if (feedData.status === 'fulfilled') {
+          const items = Array.isArray(feedData.value)
+            ? feedData.value
+            : feedData.value?.items || feedData.value?.streams || [];
+          setFeed(items);
+        }
+        if (adverts.status === 'fulfilled' && (adverts.value as any[]).length > 0) {
+          setAdvert((adverts.value as any[])[0]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch stream feed:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFeed();
+  }, []);
+
+  const displayFeed = feed;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -60,63 +77,99 @@ const StreamScreen = ({ onBack, onCreateEventPress }: { onBack: () => void, onCr
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Quick Actions */}
-        <View style={styles.actionsRow}>
-          {QUICK_ACTIONS.map((action) => (
-            <View key={action.id} style={styles.actionItem}>
-              <TouchableOpacity 
-                style={[styles.actionCircle, { backgroundColor: action.color }]}
-                onPress={() => {
-                  if (action.id === '1') router.push('/go-live');
-                  else if (action.id === '2') onCreateEventPress();
-                  else if (action.id === '3') router.push('/radio');
-                  else if (action.id === '4') router.push('/watch-stream');
-                }}
-              >
-                <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.actionName}>{action.name}</Text>
-            </View>
-          ))}
+        {/* Quick Actions Scroll Horizontal */}
+        <View style={{ marginBottom: 25 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.actionsScrollContainer}
+          >
+            {QUICK_ACTIONS.map((action) => (
+              <View key={action.id} style={styles.actionItem}>
+                <TouchableOpacity
+                  style={[styles.actionCircle, { backgroundColor: action.color }]}
+                  onPress={() => {
+                    if (action.id === '1') router.push('/go-live');
+                    else if (action.id === '2') onCreateEventPress();
+                    else if (action.id === '3') router.push('/radio');
+                    else if (action.id === '4') router.push('/watch-stream');
+                    else if (action.id === '5') router.push('/create-post');
+                    else if (action.id === '6') router.push({ pathname: '/create-post', params: { defaultType: 'story' } });
+                  }}
+                >
+                  <MaterialCommunityIcons name={action.icon as any} size={28} color="#FFF" />
+                </TouchableOpacity>
+                <Text style={styles.actionName}>{action.name}</Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Ad Banner */}
-        <TouchableOpacity style={styles.adBanner}>
-          <Image 
-            source={{ uri: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }} 
-            style={styles.adImage} 
+        <TouchableOpacity
+          style={styles.adBanner}
+          onPress={() => advert?.id && router.push({ pathname: '/event-details', params: { id: advert.id } })}
+        >
+          <Image
+            source={{ uri: advert?.imageUrl || advert?.image || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000' }}
+            style={styles.adImage}
           />
           <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']} style={styles.adOverlay}>
             <View style={styles.adHeader}>
-              <View style={styles.adBadge}><Text style={styles.adBadgeText}>NIGHTLIFE</Text></View>
+              <View style={styles.adBadge}><Text style={styles.adBadgeText}>{((advert?.category || 'NIGHTLIFE') as string).toUpperCase()}</Text></View>
               <View style={styles.adSmallBadge}><Text style={styles.adSmallBadgeText}>Ad</Text></View>
             </View>
             <View style={styles.adFooter}>
-              <Text style={styles.adTitle}>Worship De King <Ionicons name="arrow-forward-circle" size={16} /></Text>
-              <Text style={styles.adPrice}>₦15,000</Text>
+              <Text style={styles.adTitle}>{advert?.title || 'Worship De King'} <Ionicons name="arrow-forward-circle" size={16} /></Text>
+
             </View>
           </LinearGradient>
         </TouchableOpacity>
 
         {/* Feed */}
-        {STREAM_FEED.map((post) => (
-          <TouchableOpacity key={post.id} style={styles.feedCard} activeOpacity={0.92} onPress={() => router.push('/live-details')}>
-            <Image source={post.image} style={styles.feedImage} />
-            <View style={styles.cardHeader}>
-              <View style={styles.userInfo}>
-                <Image source={{ uri: post.avatar }} style={styles.userAvatar} />
-                <Text style={styles.userName}>{post.user}</Text>
-                <View style={styles.likeInfo}>
-                  <Ionicons name="heart" size={12} color="#FFF" />
-                  <Text style={styles.likeText}>{post.likes}</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#8E2DE2" style={{ marginTop: 40 }} />
+        ) : displayFeed.length === 0 ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="television-off" size={48} color="#DDD" />
+            <Text style={{ color: '#999', marginTop: 12, fontSize: 14 }}>No live streams available right now</Text>
+          </View>
+        ) : (
+          displayFeed.map((post: any, index: number) => {
+            const coverUri = post.coverUrl || post.thumbnailUrl || post.imageUrl;
+            const avatar = post.creator?.profilePictureUrl || post.hostAvatar || post.creatorAvatarUrl || `https://i.pravatar.cc/100?img=${index + 10}`;
+            const name = post.creator?.name || post.creatorName || post.hostName || post.user || 'Creator';
+            const viewers = post.viewerCount ?? post.likes ?? 0;
+            const isPaid = post.ticketPrice > 0 || post.type === 'Paid';
+            return (
+              <TouchableOpacity
+                key={post.id || index}
+                style={styles.feedCard}
+                activeOpacity={0.92}
+                onPress={() => post.id && router.push({ pathname: '/watch-stream', params: { id: post.id } })}
+              >
+                {coverUri ? (
+                  <Image source={{ uri: coverUri }} style={styles.feedImage} />
+                ) : (
+                  <Image source={require('../../../assets/images/artist_event.png')} style={styles.feedImage} />
+                )}
+                <View style={styles.cardHeader}>
+                  <View style={styles.userInfo}>
+                    <Image source={{ uri: avatar }} style={styles.userAvatar} />
+                    <Text style={styles.userName}>{name}</Text>
+                    <View style={styles.likeInfo}>
+                      <Ionicons name="eye" size={12} color="#FFF" />
+                      <Text style={styles.likeText}>{typeof viewers === 'number' ? viewers.toLocaleString() : viewers}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.typeBadge, { backgroundColor: isPaid ? '#8E2DE2' : '#7F36FF' }]}>
+                    <Text style={styles.typeText}>{isPaid ? 'Paid' : 'Free'}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={[styles.typeBadge, { backgroundColor: post.type === 'Paid' ? '#8E2DE2' : '#7F36FF' }]}>
-                <Text style={styles.typeText}>{post.type}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+              </TouchableOpacity>
+            );
+          })
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -134,8 +187,8 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row' },
   iconBtn: { marginLeft: 15, width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
-  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
-  actionItem: { alignItems: 'center' },
+  actionsScrollContainer: { gap: 16, paddingRight: 20 },
+  actionItem: { alignItems: 'center', width: 72 },
   actionCircle: { width: 68, height: 68, borderRadius: 34, justifyContent: 'center', alignItems: 'center', elevation: 3 },
   actionName: { fontSize: 11, color: '#333', fontWeight: '700', marginTop: 10 },
   adBanner: { width: '100%', height: 160, borderRadius: 20, overflow: 'hidden', marginBottom: 25 },

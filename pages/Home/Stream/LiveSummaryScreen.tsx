@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     Image,
@@ -8,28 +8,73 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { liveStreamService } from '@/services/liveStreamService';
+import { userService } from '@/services/userService';
 
 const { width } = Dimensions.get('window');
 
-const STATS = [
-    { label: 'Viewers',  value: '975K' },
-    { label: 'Likes',    value: '6.1M' },
-    { label: 'Comments', value: '103K' },
-    { label: 'Reaction', value: '1.2M' },
-];
-
-const SIMILAR_CREATORS = [
-    { id: '1', name: 'Sophia Carter',  avatar: 'https://i.pravatar.cc/150?img=47' },
-    { id: '2', name: 'Malik Johnson',  avatar: 'https://i.pravatar.cc/150?img=12' },
-    { id: '3', name: 'Elena Rossi',    avatar: 'https://i.pravatar.cc/150?img=9'  },
-    { id: '4', name: 'Hiroshi Tanaka', avatar: 'https://i.pravatar.cc/150?img=55' },
-];
-
 export default function LiveSummaryScreen() {
+    const { id: streamId } = useLocalSearchParams<{ id?: string }>();
+    const [streamData, setStreamData] = useState<any>(null);
+    const [similarCreators, setSimilarCreators] = useState<any[]>([]);
+    const [followedSet, setFollowedSet] = useState<Set<string>>(new Set());
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const [details, watchFeed] = await Promise.allSettled([
+                    streamId ? liveStreamService.getStreamDetails(streamId) : Promise.resolve(null),
+                    liveStreamService.getCreatorsOnLive(),
+                ]);
+                if (details.status === 'fulfilled') setStreamData(details.value);
+                if (watchFeed.status === 'fulfilled') {
+                    const creators = (watchFeed.value as any[]).slice(0, 4).map((c: any) => ({
+                        id: c.id || c.streamId,
+                        name: c.creatorName || c.creator?.name || 'Creator',
+                        avatar: c.creatorAvatarUrl || c.creator?.profilePictureUrl || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
+                    }));
+                    setSimilarCreators(creators);
+                }
+            } catch {}
+            finally { setLoading(false); }
+        };
+        fetchData();
+    }, [streamId]);
+
+    const handleToggleFollow = async (creatorId: string) => {
+        const isFollowed = followedSet.has(creatorId);
+        setFollowedSet((prev) => {
+            const next = new Set(prev);
+            if (isFollowed) next.delete(creatorId);
+            else next.add(creatorId);
+            return next;
+        });
+
+        try {
+            if (isFollowed) await userService.unfollowUser(creatorId);
+            else await userService.followUser(creatorId);
+        } catch {}
+    };
+
+    const stats = [
+        { label: 'Viewers',  value: streamData?.viewerCount != null ? `${streamData.viewerCount}` : '975K' },
+        { label: 'Likes',    value: streamData?.reactionCount != null ? `${streamData.reactionCount}` : '6.1M' },
+        { label: 'Comments', value: streamData?.commentCount != null ? `${streamData.commentCount}` : '103K' },
+        { label: 'Reaction', value: '1.2M' },
+    ];
+
+    const displayCreators = similarCreators.length > 0 ? similarCreators : [
+        { id: '1', name: 'Sophia Carter',  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' },
+        { id: '2', name: 'Malik Johnson',  avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' },
+        { id: '3', name: 'Elena Rossi',    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150' },
+    ];
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
             {/* Decorative bow top-right */}
@@ -56,14 +101,14 @@ export default function LiveSummaryScreen() {
                     {' '}of LIVE creators with a similar following
                 </Text>
 
-                {/* Stats card */}
+                {/* Stats card (Screenshot exact 4 columns) */}
                 <View style={styles.statsCard}>
-                    {STATS.map((stat, index) => (
+                    {stats.map((stat, index) => (
                         <View
                             key={stat.label}
                             style={[
                                 styles.statItem,
-                                index < STATS.length - 1 && styles.statItemBorder,
+                                index < stats.length - 1 && styles.statItemBorder,
                             ]}
                         >
                             <Text style={styles.statValue}>{stat.value}</Text>
@@ -72,37 +117,50 @@ export default function LiveSummaryScreen() {
                     ))}
                 </View>
 
-                {/* Earnings card */}
+                {/* Earnings card (Screenshot exact 2 columns) */}
                 <View style={styles.earningsCard}>
                     <View style={styles.earningsCol}>
                         <Text style={styles.earningsLabel}>Total Earn</Text>
-                        <Text style={styles.earningsValue}>1000,000</Text>
+                        <Text style={styles.earningsValue}>{streamData?.totalEarn ? streamData.totalEarn : '1000,000'}</Text>
                     </View>
                     <View style={styles.earningsDivider} />
                     <View style={styles.earningsCol}>
                         <Text style={styles.earningsLabel}>Ticket Sold</Text>
-                        <Text style={styles.earningsValue}>91</Text>
+                        <Text style={styles.earningsValue}>{streamData?.ticketSold ? streamData.ticketSold : '91'}</Text>
                     </View>
                 </View>
 
                 {/* Same niche creators */}
                 <Text style={styles.sectionTitle}>Creators on the same niche</Text>
-                {SIMILAR_CREATORS.map((creator) => (
-                    <View key={creator.id} style={styles.creatorRow}>
-                        <Image source={{ uri: creator.avatar }} style={styles.creatorAvatar} />
-                        <Text style={styles.creatorName}>{creator.name}</Text>
-                        <TouchableOpacity style={styles.followBtn} activeOpacity={0.85}>
-                            <Text style={styles.followBtnText}>Follow</Text>
-                        </TouchableOpacity>
-                    </View>
-                ))}
+                {displayCreators.map((creator: any) => {
+                    const isFollowed = followedSet.has(creator.id);
+                    return (
+                        <View key={creator.id} style={styles.creatorRow}>
+                            <Image source={{ uri: creator.avatar }} style={styles.creatorAvatar} />
+                            <Text style={styles.creatorName}>{creator.name}</Text>
+                            <TouchableOpacity
+                                style={[styles.followBtn, isFollowed && styles.followingBtn]}
+                                activeOpacity={0.85}
+                                onPress={() => handleToggleFollow(creator.id)}
+                            >
+                                <Text style={styles.followBtnText}>
+                                    {isFollowed ? 'Following' : 'Follow'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    );
+                })}
 
                 <View style={{ height: 100 }} />
             </ScrollView>
 
             {/* Download Stream button */}
             <View style={styles.bottomContainer}>
-                <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.87}>
+                <TouchableOpacity
+                    style={styles.downloadBtn}
+                    activeOpacity={0.87}
+                    onPress={() => router.push('/all-hosts' as any)}
+                >
                     <Text style={styles.downloadBtnText}>Download Stream</Text>
                 </TouchableOpacity>
             </View>
@@ -282,6 +340,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 22,
         paddingVertical: 10,
         borderRadius: 10,
+    },
+    followingBtn: {
+        backgroundColor: '#6B7280',
     },
     followBtnText: {
         color: '#FFF',

@@ -13,7 +13,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.nwaiwuchi10.vibeslinks",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow VibezLink to access your camera to take event cover photos and artist pictures.",
+        "NSPhotoLibraryUsageDescription": "Allow VibezLink to access your photo library to select event cover photos and artist pictures.",
+        "NSMicrophoneUsageDescription": "Allow VibezLink to access your microphone for recording videos and livestreaming."
       },
       "runtimeVersion": {
         "policy": "appVersion"
@@ -21,6 +24,13 @@
     },
     "android": {
       "package": "com.nwaiwuchi10.vibeslinks",
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_MEDIA_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/appicon.png",
@@ -47,7 +57,15 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow VibezLink to access your photos to select event cover images.",
+          "cameraPermission": "Allow VibezLink to access your camera to take event cover photos."
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -57,7 +75,8 @@
       "router": {},
       "eas": {
         "projectId": "9b208e53-5efc-4ada-a2a9-c5593496120b"
-      }
+      },
+      "googleMapsGeocodingApiKey": "AIzaSyA95so4_aRUnfubUl3hzLmNkwkMkmNPZH4"
     },
     "updates": {
       "url": "https://u.expo.dev/9b208e53-5efc-4ada-a2a9-c5593496120b"

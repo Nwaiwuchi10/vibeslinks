@@ -1,7 +1,9 @@
 import React from 'react';
 import {
+    Alert,
     Image,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -11,7 +13,68 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+
 export default function EReceiptScreen() {
+    const lastPurchase = useSelector((state: RootState) => state.event.lastPurchase);
+
+    if (!lastPurchase || !lastPurchase.receipt) {
+        return (
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text>No receipt available.</Text>
+                    <TouchableOpacity onPress={() => router.replace('/')} style={{ marginTop: 15, padding: 10, backgroundColor: '#8E2DE2', borderRadius: 8 }}>
+                        <Text style={{ color: '#FFF' }}>Go to Home</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    const { receipt } = lastPurchase;
+    const { event, attendee, items, summary } = receipt;
+
+    const handleDownload = async () => {
+        try {
+            const itemsText = items.map((item: any) => 
+                `• ${item.quantity}x ${item.tierName} Ticket (${item.currency || '₦'}${item.totalAmount.toLocaleString()})`
+            ).join('\n');
+
+            const receiptText = `
+VIBEZLINK E-RECEIPT
+=========================
+Event: ${event.title}
+Category: ${event.category || 'Event'}
+Date/Time: ${event.dateTimeText}
+Organizer: ${event.organizer || 'Vibez Nation'}
+-------------------------
+Attendee: ${attendee.fullName}
+Email: ${attendee.email}
+Phone: ${attendee.phoneNumber || 'N/A'}
+-------------------------
+Tickets purchased:
+${itemsText}
+-------------------------
+Total Paid: ${summary?.totalLabel}
+=========================
+Thank you for your purchase!
+Verify your entry using the QR code in the app.
+`;
+
+            await Share.share({
+                message: receiptText.trim(),
+                title: `${event.title} - E-Receipt`,
+            });
+        } catch (err) {
+            console.warn('[EReceiptScreen] Share failed:', err);
+            Alert.alert('Error', 'Unable to download or share the receipt.');
+        }
+    };
+
+    // QR Server API requires url encoded value
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrCodeValue || 'vibezlink://ticket')}`;
+
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
             {/* Header */}
@@ -27,7 +90,7 @@ export default function EReceiptScreen() {
                 {/* QR Code */}
                 <View style={styles.qrCard}>
                     <Image
-                        source={{ uri: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VibezLinkTicket12345' }}
+                        source={{ uri: qrCodeUrl }}
                         style={styles.qrImage}
                         resizeMode="contain"
                     />
@@ -39,19 +102,19 @@ export default function EReceiptScreen() {
                 <View style={styles.section}>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Event Name</Text>
-                        <Text style={styles.rowValue}>Deejay Coded Showcase</Text>
+                        <Text style={styles.rowValue}>{event.title}</Text>
                     </View>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Event Category</Text>
-                        <Text style={styles.rowValue}>Nightlife</Text>
+                        <Text style={styles.rowValue}>{(event.category || 'Event').toUpperCase()}</Text>
                     </View>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Event Date and Time</Text>
-                        <Text style={styles.rowValue}>May 15 - 9:00 PM</Text>
+                        <Text style={styles.rowValue}>{event.dateTimeText}</Text>
                     </View>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Organizer</Text>
-                        <Text style={styles.rowValue}>Vibez Nation</Text>
+                        <Text style={styles.rowValue}>{event.organizer || 'Vibez Nation'}</Text>
                     </View>
                 </View>
 
@@ -61,15 +124,15 @@ export default function EReceiptScreen() {
                 <View style={styles.section}>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Full Name</Text>
-                        <Text style={styles.rowValue}>Roland Emmanuel</Text>
+                        <Text style={styles.rowValue}>{attendee.fullName}</Text>
                     </View>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Phone Number</Text>
-                        <Text style={styles.rowValue}>234 9384058382</Text>
+                        <Text style={styles.rowValue}>{attendee.phoneNumber || 'N/A'}</Text>
                     </View>
                     <View style={styles.row}>
                         <Text style={styles.rowLabel}>Email</Text>
-                        <Text style={styles.rowValue} numberOfLines={1}>rolandemmanuell03@gmai.com</Text>
+                        <Text style={styles.rowValue} numberOfLines={1}>{attendee.email}</Text>
                     </View>
                 </View>
 
@@ -77,17 +140,23 @@ export default function EReceiptScreen() {
 
                 {/* Ticket Breakdown */}
                 <View style={styles.section}>
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>09 General Ticket</Text>
-                        <Text style={styles.rowValue}>₦720,000</Text>
-                    </View>
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>03 VVIP Ticket</Text>
-                        <Text style={styles.rowValue}>₦780,000</Text>
-                    </View>
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>Fees</Text>
-                        <Text style={styles.rowValue}>$3.5</Text>
+                    {items.map((item: any, idx: number) => (
+                        <View key={idx} style={styles.row}>
+                            <Text style={styles.rowLabel}>{item.quantity.toString().padStart(2, '0')} {item.tierName} Ticket</Text>
+                            <Text style={styles.rowValue}>{item.currency || '₦'}{item.totalAmount.toLocaleString()}</Text>
+                        </View>
+                    ))}
+                    {summary?.lineItems?.map((line: any, idx: number) => (
+                        line.label.toLowerCase().includes('fee') && (
+                            <View key={idx} style={styles.row}>
+                                <Text style={styles.rowLabel}>{line.label}</Text>
+                                <Text style={styles.rowValue}>{line.value}</Text>
+                            </View>
+                        )
+                    ))}
+                    <View style={[styles.row, { marginTop: 8 }]}>
+                        <Text style={[styles.rowLabel, { fontWeight: '700', color: '#333' }]}>Total</Text>
+                        <Text style={[styles.rowValue, { fontWeight: '800', color: '#8E2DE2', fontSize: 16 }]}>{summary?.totalLabel}</Text>
                     </View>
                 </View>
 
@@ -96,7 +165,7 @@ export default function EReceiptScreen() {
 
             {/* Bottom Actions */}
             <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleDownload} activeOpacity={0.85}>
                     <Text style={styles.primaryBtnText}>Download E-Receipt</Text>
                 </TouchableOpacity>
                 <TouchableOpacity

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Image,
     Modal,
@@ -8,24 +8,30 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons, Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const MEMBERS = [
-    { id: '1', name: 'Sophia Carter', image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' },
-    { id: '2', name: 'Malik Johnson', image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' },
-    { id: '3', name: 'Elena Rossi', image: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150' },
-];
+import { useAppSelector } from '@/store/hooks';
 
 export default function ChatProfileScreen() {
-    const params = useLocalSearchParams<{ name: string, image: string, isGroup: string }>();
+    const params = useLocalSearchParams<{ id?: string, name?: string, image?: string, isGroup?: string }>();
     const isGroup = params.isGroup === 'true';
-    const chatName = params.name || 'Roland Emmanuel';
+    const conversationId = params.id;
+    const chatName = params.name || 'Conversation Profile';
     const chatImage = params.image || 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=300';
 
     const [showEndGroupModal, setShowEndGroupModal] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
+
+    const threads = useAppSelector((state) => state.chat.threads) || [];
+    const activeThread = threads.find((t: any) => String(t.id || t._id) === String(conversationId));
+    
+    // Map actual participants from the active thread dynamically
+    const members: Array<{ id: string; name: string; image: string }> = (activeThread?.participants || []).map((p: any, idx: number) => ({
+        id: p.id || p._id || p.userId || String(idx),
+        name: p.name || p.fullName || p.username || 'Member',
+        image: p.profilePictureUrl || p.avatarUrl || `https://i.pravatar.cc/150?img=${idx + 10}`,
+    }));
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -92,8 +98,8 @@ export default function ChatProfileScreen() {
 
                         {/* Members List */}
                         <View style={styles.membersSection}>
-                            <Text style={styles.membersTitle}>Members({MEMBERS.length})</Text>
-                            {MEMBERS.map((member) => (
+                            <Text style={styles.membersTitle}>Members({members.length})</Text>
+                            {members.map((member) => (
                                 <View key={member.id} style={styles.memberRow}>
                                     <Image source={{ uri: member.image }} style={styles.memberAvatar} />
                                     <Text style={styles.memberName}>{member.name}</Text>
@@ -149,8 +155,7 @@ export default function ChatProfileScreen() {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>End this group?</Text>
-                        <Text style={styles.modalSubtitle}>All group member will be remove from this chart.</Text>
-                        
+                        <Text style={styles.modalSubtitle}>All group members will be removed from this chat.</Text>
                         <View style={styles.modalBtnsRow}>
                             <TouchableOpacity style={styles.confirmBtn} onPress={() => setShowEndGroupModal(false)}>
                                 <Text style={styles.confirmBtnText}>Confirm</Text>
@@ -162,6 +167,7 @@ export default function ChatProfileScreen() {
                     </View>
                 </View>
             </Modal>
+
             {/* Share/Invite Link Modal */}
             <Modal visible={showShareModal} transparent animationType="slide" onRequestClose={() => setShowShareModal(false)}>
                 <View style={styles.shareOverlay}>
@@ -181,17 +187,17 @@ export default function ChatProfileScreen() {
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shareUsersRow}>
                             <View style={styles.shareUserItem}>
                                 <View style={styles.shareAvatarOuter}>
-                                    <Image source={{ uri: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150' }} style={styles.shareAvatar} />
+                                    <Image source={{ uri: chatImage }} style={styles.shareAvatar} />
                                     <View style={styles.shareAddBtn}><Ionicons name="add" size={12} color="#FFF" /></View>
                                 </View>
                                 <Text style={styles.shareUserName}>Your Story</Text>
                             </View>
-                            {['adevibes', 'Nicky', 'ramonbrown', 'topaz'].map((name, i) => (
-                                <View key={i} style={styles.shareUserItem}>
+                            {members.slice(0, 5).map((m) => (
+                                <View key={m.id} style={styles.shareUserItem}>
                                     <View style={[styles.shareAvatarOuter, { borderColor: '#8E2DE2', borderWidth: 2 }]}>
-                                        <Image source={{ uri: `https://i.pravatar.cc/150?img=${i + 10}` }} style={styles.shareAvatar} />
+                                        <Image source={{ uri: m.image }} style={styles.shareAvatar} />
                                     </View>
-                                    <Text style={styles.shareUserName}>{name}</Text>
+                                    <Text style={styles.shareUserName}>{m.name}</Text>
                                 </View>
                             ))}
                         </ScrollView>
@@ -222,326 +228,57 @@ export default function ChatProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-    },
-    header: {
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-    },
-    backBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#EAEAEA',
-    },
-    content: {
-        paddingTop: 20,
-        paddingBottom: 100,
-    },
-    profileSection: {
-        alignItems: 'center',
-        marginBottom: 32,
-    },
-    avatar: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        marginBottom: 16,
-    },
-    nameText: {
-        fontSize: 22,
-        fontWeight: '800',
-        color: '#333',
-    },
-    actionsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingHorizontal: 10,
-        marginBottom: 40,
-    },
-    actionItem: {
-        alignItems: 'center',
-    },
-    iconCircle: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: '#FFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#EAEAEA',
-        marginBottom: 8,
-    },
-    actionText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#111',
-    },
-    bottomContainer: {
-        position: 'absolute',
-        bottom: 40,
-        left: 20,
-        right: 20,
-    },
-    reportBtn: {
-        backgroundColor: '#E91E63',
-        flexDirection: 'row',
-        paddingVertical: 16,
-        borderRadius: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    reportText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    editGroupText: {
-        fontSize: 14,
-        color: '#8E2DE2',
-        fontWeight: '600',
-    },
-    groupActionsCard: {
-        backgroundColor: '#F5F5F5',
-        borderRadius: 24,
-        marginHorizontal: 20,
-        paddingVertical: 20,
-        paddingHorizontal: 10,
-        marginBottom: 30,
-    },
-    actionGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'flex-start',
-    },
-    actionGridItem: {
-        width: '25%',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    iconCircleGrid: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: '#FFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    actionTextGrid: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: '#111',
-        textAlign: 'center',
-    },
-    membersSection: {
-        paddingHorizontal: 20,
-    },
-    membersTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#666',
-        marginBottom: 16,
-    },
-    memberRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    memberAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        marginRight: 12,
-    },
-    memberName: {
-        flex: 1,
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#111',
-    },
-    msgBtn: {
-        backgroundColor: '#000',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 8,
-    },
-    msgBtnText: {
-        color: '#FFF',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    // Modals
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-    },
-    modalContent: {
-        backgroundColor: '#FFF',
-        borderRadius: 24,
-        padding: 24,
-        width: '100%',
-        alignItems: 'center',
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#333',
-        marginBottom: 8,
-    },
-    modalSubtitle: {
-        fontSize: 14,
-        color: '#8A8A8A',
-        textAlign: 'center',
-        marginBottom: 24,
-        paddingHorizontal: 10,
-    },
-    modalBtnsRow: {
-        flexDirection: 'row',
-        gap: 12,
-        width: '100%',
-    },
-    confirmBtn: {
-        flex: 1,
-        backgroundColor: '#333',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    confirmBtnText: {
-        color: '#FFF',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    cancelBtn: {
-        flex: 1,
-        backgroundColor: '#EAEAEA',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    cancelBtnText: {
-        color: '#E91E63',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-
-    // Share Modal
-    shareOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'flex-end',
-    },
-    shareDismiss: {
-        flex: 1,
-    },
-    shareContent: {
-        backgroundColor: '#FFF',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        paddingTop: 12,
-        paddingBottom: 40,
-    },
-    dragIndicator: {
-        width: 48,
-        height: 4,
-        backgroundColor: '#E0E0E0',
-        borderRadius: 2,
-        alignSelf: 'center',
-        marginBottom: 24,
-    },
-    shareSearchRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        marginBottom: 24,
-    },
-    shareSearchBox: {
-        flex: 1,
-        backgroundColor: '#F3F3F3',
-        borderRadius: 24,
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        marginRight: 12,
-    },
-    shareSearchBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#8E2DE2',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    shareUsersRow: {
-        paddingHorizontal: 20,
-        gap: 16,
-        marginBottom: 30,
-    },
-    shareUserItem: {
-        alignItems: 'center',
-        width: 72,
-    },
-    shareAvatarOuter: {
-        width: 68,
-        height: 68,
-        borderRadius: 34,
-        padding: 3,
-        marginBottom: 6,
-    },
-    shareAvatar: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 30,
-    },
-    shareAddBtn: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        backgroundColor: '#8E2DE2',
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#FFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    shareUserName: {
-        fontSize: 12,
-        fontWeight: '500',
-        color: '#333',
-    },
-    shareActionsRow: {
-        paddingHorizontal: 20,
-        gap: 16,
-    },
-    shareActionItem: {
-        alignItems: 'center',
-        width: 80,
-    },
-    shareActionIcon: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: '#F5F5F5',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    shareActionText: {
-        fontSize: 12,
-        fontWeight: '500',
-        color: '#333',
-        textAlign: 'center',
-    },
+    safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
+    header: { paddingHorizontal: 20, paddingVertical: 16 },
+    backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EAEAEA' },
+    content: { paddingTop: 20, paddingBottom: 100 },
+    profileSection: { alignItems: 'center', marginBottom: 32 },
+    avatar: { width: 100, height: 100, borderRadius: 50, marginBottom: 12 },
+    nameText: { fontSize: 20, fontWeight: '700', color: '#111' },
+    editGroupText: { fontSize: 13, color: '#8E2DE2', fontWeight: '600' },
+    groupActionsCard: { backgroundColor: '#FFF', borderRadius: 24, marginHorizontal: 20, padding: 20, borderWidth: 1, borderColor: '#F0F0F0', marginBottom: 25 },
+    actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, justifyContent: 'space-between' },
+    actionGridItem: { width: '30%', alignItems: 'center', marginVertical: 8 },
+    iconCircleGrid: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FAF6FF', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+    actionTextGrid: { fontSize: 11, fontWeight: '600', color: '#555', textAlign: 'center' },
+    membersSection: { paddingHorizontal: 24 },
+    membersTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 16 },
+    memberRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+    memberAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+    memberName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#333' },
+    msgBtn: { backgroundColor: '#FAF6FF', borderWidth: 1, borderColor: '#8E2DE2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+    msgBtnText: { color: '#8E2DE2', fontSize: 11, fontWeight: '700' },
+    actionsRow: { flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: 20, backgroundColor: '#FFF', padding: 20, borderRadius: 24, borderWidth: 1, borderColor: '#F0F0F0' },
+    actionItem: { alignItems: 'center', gap: 6 },
+    iconCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FAF6FF', justifyContent: 'center', alignItems: 'center' },
+    actionText: { fontSize: 12, fontWeight: '600', color: '#555' },
+    bottomContainer: { padding: 20, borderTopWidth: 1, borderTopColor: '#F0F0F0', backgroundColor: '#FFF' },
+    reportBtn: { backgroundColor: '#FF3B30', height: 50, borderRadius: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    reportText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { width: '80%', backgroundColor: '#FFF', borderRadius: 24, padding: 24, alignItems: 'center' },
+    modalTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 8 },
+    modalSubtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 20 },
+    modalBtnsRow: { flexDirection: 'row', gap: 12 },
+    confirmBtn: { flex: 1, backgroundColor: '#FF3B30', height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    confirmBtnText: { color: '#FFF', fontWeight: '700' },
+    cancelBtn: { flex: 1, backgroundColor: '#F5F5F5', height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    cancelBtnText: { color: '#333', fontWeight: '700' },
+    shareOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+    shareDismiss: { flex: 1 },
+    shareContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+    dragIndicator: { width: 40, height: 4, backgroundColor: '#DDD', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    shareSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+    shareSearchBox: { flex: 1, backgroundColor: '#F5F5F5', height: 46, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15 },
+    shareSearchBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#8E2DE2', justifyContent: 'center', alignItems: 'center' },
+    shareUsersRow: { gap: 15, paddingBottom: 10 },
+    shareUserItem: { alignItems: 'center', width: 68 },
+    shareAvatarOuter: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+    shareAvatar: { width: 50, height: 50, borderRadius: 25 },
+    shareAddBtn: { position: 'absolute', right: -2, bottom: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: '#8E2DE2', justifyContent: 'center', alignItems: 'center' },
+    shareUserName: { fontSize: 10, color: '#666', marginTop: 6, textAlign: 'center' },
+    shareActionsRow: { gap: 20, paddingTop: 20 },
+    shareActionItem: { alignItems: 'center', width: 68 },
+    shareActionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
+    shareActionText: { fontSize: 10, color: '#333', textAlign: 'center' },
 });

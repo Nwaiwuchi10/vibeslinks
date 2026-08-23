@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import {
     Image,
     Modal,
@@ -9,87 +9,122 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppSelector } from '@/store/hooks';
+import { chatService } from '@/services/chatService';
+import StoriesSection from '@/components/StoriesSection';
 
-const STORIES = [
-    { id: '1', name: 'Your Story', image: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?w=150', isAdd: true },
-    { id: '2', name: 'adevibes', image: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150' },
-    { id: '3', name: 'Nicky', image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150' },
-    { id: '4', name: 'ramonbrown', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150' },
-];
 
-const CHATS = [
-    {
-        id: '1',
-        name: 'Roland',
-        message: 'You dey come tonight?',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?w=150',
-    },
-    {
-        id: '2',
-        name: 'Joseph Ebuka',
-        message: 'Sent a photo',
-        time: 'Yesterday',
-        image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-        unread: 2,
-        pinned: true,
-    },
-    {
-        id: '3',
-        name: 'Telly Khabar',
-        message: 'You dey come tonight?',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1517070208541-6ddc4d3efbcb?w=150',
-    },
-    {
-        id: '4',
-        name: 'Joseph Ebuka',
-        message: 'Sent a photo',
-        time: '11:21 AM',
-        image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-        unread: 3,
-        muted: true,
-    },
-    {
-        id: '5',
-        name: 'The lion King',
-        message: 'You dey were added',
-        time: '11:09 AM',
-        image: 'https://images.unsplash.com/photo-1615112196695-171542f53d4c?w=150', // Tiger
-    },
-];
+
+import { resolveImageUrl } from '@/services/apiClient';
 
 export default function MessagesListScreen() {
     const [showFilter, setShowFilter] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedFilter, setSelectedFilter] = useState<'All' | 'Unread' | 'Groups' | 'Favorite'>('All');
+    const currentUser = useAppSelector((state) => state.auth?.user);
+    const currentUserId = currentUser?.id || currentUser?._id;
+    const rawThreads = useAppSelector((state) => state.chat?.threads);
+    const threads: any[] = Array.isArray(rawThreads) ? rawThreads : [];
+    const [loading, setLoading] = useState(true);
 
-    const renderChat = ({ item }: { item: typeof CHATS[0] }) => (
-        <TouchableOpacity
-            style={styles.chatRow}
-            activeOpacity={0.8}
-            onPress={() => router.push({ pathname: '/chat-detail', params: { id: item.id, name: item.name, image: item.image } })}
-        >
-            <Image source={{ uri: item.image }} style={styles.chatAvatar} />
-            <View style={styles.chatBody}>
-                <Text style={styles.chatName}>{item.name}</Text>
-                <Text style={styles.chatMessage} numberOfLines={1}>{item.message}</Text>
-            </View>
-            <View style={styles.chatRight}>
-                <Text style={[styles.chatTime, item.unread ? styles.chatTimeUnread : null]}>{item.time}</Text>
-                <View style={styles.chatIcons}>
-                    {item.muted && <Ionicons name="volume-mute" size={14} color="#A0A0A0" />}
-                    {item.pinned && <MaterialCommunityIcons name="pin" size={14} color="#A0A0A0" />}
-                    {item.unread && (
-                        <View style={styles.unreadBadge}>
-                            <Text style={styles.unreadText}>{item.unread}</Text>
-                        </View>
-                    )}
-                </View>
-            </View>
-        </TouchableOpacity>
+    useFocusEffect(
+        useCallback(() => {
+            setLoading(true);
+            chatService.getThreads()
+                .catch(() => {})
+                .finally(() => setLoading(false));
+        }, [])
     );
+
+    const filteredThreads = threads.filter(chat => {
+        // 1. Search Query Filter
+        const title = chat.title || chat.name || '';
+        const lastMsg = chat.lastMessage?.message || '';
+        const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              lastMsg.toLowerCase().includes(searchQuery.toLowerCase());
+        if (!matchesSearch) return false;
+
+        // 2. Tab Category Filter
+        if (selectedFilter === 'Unread') {
+            return (chat.unreadCount && chat.unreadCount > 0) || chat.unread === true;
+        }
+        if (selectedFilter === 'Groups') {
+            return chat.type === 'host-event' || chat.type === 'community' || chat.isGroup === true;
+        }
+        if (selectedFilter === 'Favorite') {
+            return chat.pinned === true || chat.isFavorite === true;
+        }
+        return true; // 'All'
+    });
+
+    const renderChat = ({ item }: { item: any }) => {
+        const lastMsgObj = item.lastMessage;
+        const lastMsg = typeof lastMsgObj === 'string'
+            ? lastMsgObj
+            : lastMsgObj?.message || lastMsgObj?.text || lastMsgObj?.content || item.lastMessageText || 'No messages yet';
+
+        const rawDate = lastMsgObj?.createdAt || item.lastMessageAt || item.updatedAt;
+        const lastMsgTime = rawDate
+            ? new Date(rawDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
+        
+        const currentIdStr = String(currentUserId || '');
+        const otherParticipant = (item.participants || []).find((p: any) => {
+            const pid = String(p.id || p._id || p.userId || '');
+            return pid && pid !== currentIdStr;
+        }) || {};
+
+        const isDirect = item.type === 'direct';
+        const name = (isDirect && (otherParticipant.name || otherParticipant.fullName || otherParticipant.username))
+            ? (otherParticipant.name || otherParticipant.fullName || otherParticipant.username)
+            : (item.title && item.title !== 'Direct Chat' && item.title !== 'Host Event Chat')
+            ? item.title
+            : (otherParticipant.name || otherParticipant.fullName || otherParticipant.username || item.name || 'Chat');
+
+        const rawAvatar = isDirect
+            ? (otherParticipant.avatarUrl || otherParticipant.profilePictureUrl || otherParticipant.avatar || item.imageUrl || item.avatarUrl)
+            : (item.imageUrl || item.avatarUrl || otherParticipant.avatarUrl || otherParticipant.profilePictureUrl);
+
+        const image = resolveImageUrl(rawAvatar);
+
+        return (
+            <TouchableOpacity
+                style={styles.chatRow}
+                activeOpacity={0.8}
+                onPress={() => router.push({ pathname: '/chat-detail', params: { id: item.id || item._id, name, image } })}
+            >
+                {image ? (
+                    <Image source={{ uri: image }} style={styles.chatAvatar} />
+                ) : (
+                    <View style={styles.chatAvatarPlaceholder}>
+                        <Text style={styles.chatAvatarInitials}>
+                            {(name || 'C').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </Text>
+                    </View>
+                )}
+                <View style={styles.chatBody}>
+                    <Text style={styles.chatName}>{name}</Text>
+                    <Text style={styles.chatMessage} numberOfLines={1}>{lastMsg}</Text>
+                </View>
+                <View style={styles.chatRight}>
+                    <Text style={[styles.chatTime, item.unreadCount ? styles.chatTimeUnread : null]}>{lastMsgTime}</Text>
+                    <View style={styles.chatIcons}>
+                        {item.muted && <Ionicons name="volume-mute" size={14} color="#A0A0A0" />}
+                        {item.pinned && <MaterialCommunityIcons name="pin" size={14} color="#A0A0A0" />}
+                        {item.unreadCount > 0 && (
+                            <View style={styles.unreadBadge}>
+                                <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -116,37 +151,50 @@ export default function MessagesListScreen() {
                     style={styles.searchInput}
                     placeholder="Search messages, artists, events..."
                     placeholderTextColor="#A0A0A0"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
                 />
+            </View>
+
+            {/* Filter Pills Row */}
+            <View style={styles.pillsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsScroll}>
+                    {['All', 'Unread', 'Groups', 'Favorite'].map((option) => {
+                        const active = selectedFilter === option;
+                        return (
+                            <TouchableOpacity
+                                key={option}
+                                style={[styles.pill, active && styles.pillActive]}
+                                onPress={() => setSelectedFilter(option as any)}
+                            >
+                                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                                    {option}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
                 {/* Stories Row */}
-                <View style={styles.storiesContainer}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesScroll}>
-                        {STORIES.map((story) => (
-                            <TouchableOpacity 
-                                key={story.id} 
-                                style={styles.storyItem}
-                                activeOpacity={0.8}
-                                onPress={() => router.push(story.isAdd ? '/add-story' : '/view-story')}
-                            >
-                                <View style={styles.storyImageContainer}>
-                                    <Image source={{ uri: story.image }} style={styles.storyImage} />
-                                    {story.isAdd && (
-                                        <View style={styles.storyAddBtn}>
-                                            <Ionicons name="add" size={14} color="#FFF" />
-                                        </View>
-                                    )}
-                                </View>
-                                <Text style={styles.storyName} numberOfLines={1}>{story.name}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                </View>
+                {/* Stories Row */}
+                <StoriesSection />
 
                 {/* Chats List */}
                 <View style={styles.chatsContainer}>
-                    {CHATS.map(chat => <React.Fragment key={chat.id}>{renderChat({ item: chat })}</React.Fragment>)}
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#8E2DE2" style={{ marginVertical: 30 }} />
+                    ) : filteredThreads.length === 0 ? (
+                        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                            <MaterialCommunityIcons name="message-text-outline" size={48} color="#DDD" />
+                            <Text style={{ color: '#999', marginTop: 12, fontSize: 14 }}>
+                                No threads found.
+                            </Text>
+                        </View>
+                    ) : (
+                        filteredThreads.map(chat => <React.Fragment key={chat.id}>{renderChat({ item: chat })}</React.Fragment>)
+                    )}
                 </View>
             </ScrollView>
 
@@ -163,8 +211,21 @@ export default function MessagesListScreen() {
                         <View style={styles.dragIndicator} />
                         
                         {['All', 'Unread', 'Groups', 'Favorite'].map((option) => (
-                            <TouchableOpacity key={option} style={styles.filterOption} onPress={() => setShowFilter(false)}>
-                                <Text style={styles.filterOptionText}>{option}</Text>
+                            <TouchableOpacity
+                                key={option}
+                                style={[
+                                    styles.filterOption,
+                                    selectedFilter === option && styles.filterOptionActive
+                                ]}
+                                onPress={() => {
+                                    setSelectedFilter(option as any);
+                                    setShowFilter(false);
+                                }}
+                            >
+                                <Text style={[
+                                    styles.filterOptionText,
+                                    selectedFilter === option && styles.filterOptionTextActive
+                                ]}>{option}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -347,6 +408,56 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingBottom: 40,
         paddingTop: 12,
+    },
+    filterOptionActive: {
+        backgroundColor: '#F3E8FF',
+        borderRadius: 16,
+    },
+    filterOptionTextActive: {
+        color: '#8E2DE2',
+        fontWeight: '700',
+    },
+    // Pills
+    pillsContainer: {
+        marginBottom: 16,
+    },
+    pillsScroll: {
+        paddingHorizontal: 20,
+        gap: 10,
+    },
+    pill: {
+        paddingHorizontal: 18,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: '#F3F3F3',
+        borderWidth: 1,
+        borderColor: '#EAEAEA',
+    },
+    pillActive: {
+        backgroundColor: '#8E2DE2',
+        borderColor: '#8E2DE2',
+    },
+    pillText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#666',
+    },
+    pillTextActive: {
+        color: '#FFF',
+    },
+    // Initials Avatar Placeholder
+    chatAvatarPlaceholder: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#8E2DE2',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    chatAvatarInitials: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '700',
     },
     dragIndicator: {
         width: 48,

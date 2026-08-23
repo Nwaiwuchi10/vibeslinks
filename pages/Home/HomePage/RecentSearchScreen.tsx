@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     FlatList,
     Image,
     StyleSheet,
@@ -11,67 +12,91 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
-
-const INITIAL_RESULTS = [
-    {
-        id: '1',
-        title: 'Afro Summer Festival',
-        category: 'NIGHTLIFE',
-        location: 'Lekki Ikata, Lagos',
-        price: '₦80,000',
-        image: 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?q=80&w=400',
-    },
-    {
-        id: '2',
-        title: 'Worship De King',
-        category: 'FESTIVALS',
-        location: 'Lekki Ikata, Lagos',
-        price: '₦15,000',
-        image: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=400',
-    },
-    {
-        id: '3',
-        title: 'Afro Summer Festival',
-        category: 'SPORTS EVENTS',
-        location: 'Lekki Ikata, Lagos',
-        price: '₦80,000',
-        image: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?q=80&w=400',
-    },
-    {
-        id: '4',
-        title: 'Paint With Mimi, &...',
-        category: 'COMEDY',
-        location: 'Lekki Ikata, Lagos',
-        price: '₦80,000',
-        image: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=400',
-    },
-];
+import { eventService } from '@/services/eventService';
+import { resolveImageUrl } from '@/services/apiClient';
 
 export default function RecentSearchScreen() {
-    const [results, setResults] = useState(INITIAL_RESULTS);
+    const [results, setResults] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const renderItem = ({ item }: { item: typeof INITIAL_RESULTS[0] }) => (
-        <View style={styles.card}>
-            <Image source={{ uri: item.image }} style={styles.cardImage} />
-            
-            <View style={styles.cardContent}>
-                <View style={styles.categoryPill}>
-                    <Text style={styles.categoryText}>{item.category}</Text>
+    useEffect(() => {
+        setLoading(true);
+        eventService.getEventSearchScreen()
+            .then((data) => {
+                let items: any[] = [];
+                if (data?.recentViews && Array.isArray(data.recentViews) && data.recentViews.length > 0) {
+                    items = data.recentViews;
+                } else if (data?.recentSearches && Array.isArray(data.recentSearches) && data.recentSearches.length > 0) {
+                    items = data.recentSearches;
+                }
+                
+                if (items.length === 0) {
+                    // Fallback to published events near you from database
+                    return eventService.getEventsNearYou({ limit: 10 }).then((res) => {
+                        const list = Array.isArray(res) ? res : res?.items || (res as any)?.data || [];
+                        setResults(list);
+                    });
+                } else {
+                    setResults(items);
+                }
+            })
+            .catch((err) => {
+                console.warn('[RecentSearchScreen] Error fetching search data:', err);
+                return eventService.getEventsNearYou({ limit: 10 }).then((res) => {
+                    const list = Array.isArray(res) ? res : res?.items || (res as any)?.data || [];
+                    setResults(list);
+                }).catch(() => setResults([]));
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    const handleClearAll = () => {
+        setResults([]);
+    };
+
+    const renderItem = ({ item }: { item: any }) => {
+        const title = item.title || item.query || item.name || 'Event';
+        const category = (item.category || 'EVENT').toUpperCase();
+        const location = item.locationText || item.location || item.venue || 'Lagos, Nigeria';
+        const price = item.priceText || (item.price !== undefined ? (Number(item.price) > 0 ? `₦${Number(item.price).toLocaleString()}` : 'Free') : 'Free');
+        const rawImg = item.imageUrl || item.eventPosterUrl || item.image || item.coverUrl;
+        const imageUri = resolveImageUrl(rawImg);
+
+        return (
+            <TouchableOpacity
+                style={styles.card}
+                activeOpacity={0.85}
+                onPress={() => {
+                    if (item.id) {
+                        router.push({ pathname: '/event-details', params: { id: item.id } });
+                    }
+                }}
+            >
+                {imageUri ? (
+                    <Image source={{ uri: imageUri }} style={styles.cardImage} />
+                ) : (
+                    <Image source={require('../../../assets/images/redvive.png')} style={styles.cardImage} />
+                )}
+                
+                <View style={styles.cardContent}>
+                    <View style={styles.categoryPill}>
+                        <Text style={styles.categoryText}>{category}</Text>
+                    </View>
+                    
+                    <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
+                    
+                    <View style={styles.locationRow}>
+                        <Ionicons name="location" size={14} color={Colors.primary || '#8E2DE2'} />
+                        <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+                    </View>
+                    
+                    <Text style={styles.priceHighlight}>
+                        {price} <Text style={styles.priceSub}>/Person</Text>
+                    </Text>
                 </View>
-                
-                <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-                
-                <View style={styles.locationRow}>
-                    <Ionicons name="location" size={14} color={Colors.primary} />
-                    <Text style={styles.locationText}>{item.location}</Text>
-                </View>
-                
-                <Text style={styles.priceHighlight}>
-                    {item.price} <Text style={styles.priceSub}>/Person</Text>
-                </Text>
-            </View>
-        </View>
-    );
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -81,19 +106,29 @@ export default function RecentSearchScreen() {
                     <Ionicons name="arrow-back" size={20} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Recent Search</Text>
-                <TouchableOpacity onPress={() => setResults([])}>
+                <TouchableOpacity onPress={handleClearAll}>
                     <Text style={styles.clearAllText}>Clear all</Text>
                 </TouchableOpacity>
             </View>
 
-            {/* List */}
-            <FlatList
-                data={results}
-                keyExtractor={(item) => item.id}
-                renderItem={renderItem}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-            />
+            {loading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={Colors.primary || '#8E2DE2'} />
+                </View>
+            ) : results.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                    <Ionicons name="search-outline" size={48} color="#CCC" />
+                    <Text style={styles.emptyText}>No recent searches found</Text>
+                </View>
+            ) : (
+                <FlatList
+                    data={results}
+                    keyExtractor={(item, index) => item.id || String(index)}
+                    renderItem={renderItem}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -128,9 +163,24 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     clearAllText: {
-        color: Colors.primary,
+        color: Colors.primary || '#8E2DE2',
         fontSize: 14,
         fontWeight: '600',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyText: {
+        color: '#999',
+        fontSize: 14,
+        marginTop: 12,
     },
     listContent: {
         paddingTop: 10,
@@ -150,8 +200,8 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     cardImage: {
-        width: 140,
-        height: 120,
+        width: 120,
+        height: 110,
         borderRadius: 12,
         marginRight: 16,
     },
@@ -189,10 +239,11 @@ const styles = StyleSheet.create({
         color: '#8A8A8A',
         marginLeft: 4,
         fontWeight: '500',
+        flex: 1,
     },
     priceHighlight: {
         fontSize: 15,
-        color: Colors.primary,
+        color: Colors.primary || '#8E2DE2',
         fontWeight: '800',
     },
     priceSub: {

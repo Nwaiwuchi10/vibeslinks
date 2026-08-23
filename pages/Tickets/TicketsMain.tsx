@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,157 +8,173 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
-
-const ticketsData = {
-  upcoming: [
-    {
-      id: '1',
-      title: 'Afro Summer Festival',
-      category: 'NIGHTLIFE',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/davido.png'),
-    },
-    {
-      id: '2',
-      title: 'Groove Gala on a th...',
-      category: 'COMEDY',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/modu.png'),
-    },
-    {
-      id: '3',
-      title: 'Afro Summer Festival',
-      category: 'NIGHTLIFE',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/skibi.png'),
-    },
-  ],
-  completed: [
-    {
-      id: '4',
-      title: 'Afro Summer Festival',
-      category: 'NIGHTLIFE',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/burna_boy.png'),
-    },
-    {
-      id: '5',
-      title: 'Afro Summer Festival',
-      category: 'NIGHTLIFE',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/davido.png'),
-    },
-  ],
-  cancelled: [
-    {
-      id: '6',
-      title: 'Afro Summer Festival',
-      category: 'NIGHTLIFE',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/davido.png'),
-    },
-    {
-      id: '7',
-      title: 'Worship De King',
-      category: 'FESTIVALS',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦15,000',
-      image: require('@/assets/images/skibi.png'),
-    },
-    {
-      id: '8',
-      title: 'Afro Summer Festival',
-      category: 'SPORTS EVENTS',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/davido.png'),
-    },
-    {
-      id: '9',
-      title: 'Paint With Mimi, &...',
-      category: 'COMEDY',
-      location: 'Lekki Ikata, Lagos',
-      price: '₦80,000',
-      image: require('@/assets/images/modu.png'),
-    },
-  ],
-};
+import { eventService } from '@/services/eventService';
+import { store } from '@/store';
+import { setLastPurchase } from '@/store/slices/eventSlice';
 
 export default function TicketsMain() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'cancelled'>('upcoming');
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const renderTicketItem = ({ item }: { item: any }) => (
-    <View style={styles.ticketCard}>
-      <View style={styles.cardInfoContainer}>
-        <Image source={item.image} style={styles.eventImage} />
-        <View style={styles.eventDetails}>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{item.category}</Text>
+  const fetchTickets = async () => {
+    setLoading(true);
+    try {
+      const res = await eventService.getMyTickets(activeTab);
+      let list: any[] = [];
+      if (res) {
+        if (Array.isArray(res)) {
+          list = res;
+        } else if (res.sections && Array.isArray(res.sections[activeTab])) {
+          list = res.sections[activeTab];
+        } else if (Array.isArray(res[activeTab])) {
+          list = res[activeTab];
+        } else if (Array.isArray(res.items)) {
+          list = res.items;
+        } else if (res.data && Array.isArray(res.data)) {
+          list = res.data;
+        }
+      }
+      setTickets(list);
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTickets();
+  }, [activeTab]);
+
+  const renderTicketItem = ({ item }: { item: any }) => {
+    const event = item.event || item;
+    const title = event.title || item.title || 'Untitled Event';
+    const category = event.category || item.category || 'EVENT';
+    const location = event.location || item.location || 'Online / TBA';
+
+    let imageUri = event.imageUrl || event.coverUrl || item.image;
+    const imageSource = typeof imageUri === 'string' && imageUri.startsWith('http')
+      ? { uri: imageUri }
+      : imageUri;
+
+    let priceText = item.price || item.totalAmount || event.price || '—';
+    if (typeof priceText === 'number') {
+      priceText = `₦${priceText.toLocaleString()}`;
+    }
+
+    return (
+      <View style={styles.ticketCard}>
+        <View style={styles.cardInfoContainer}>
+          <Image source={imageSource} style={styles.eventImage} contentFit="cover" />
+          <View style={styles.eventDetails}>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryText}>{category.toUpperCase()}</Text>
+            </View>
+            <Text style={styles.eventTitle} numberOfLines={1}>{title}</Text>
+            <View style={styles.locationContainer}>
+              <Ionicons name="location" size={14} color={Colors.primary} />
+              <Text style={styles.locationText}>{location}</Text>
+            </View>
+            <Text style={styles.priceText}>
+              <Text style={styles.priceValue}>{priceText}</Text> {item.price ? '' : '/Person'}
+            </Text>
           </View>
-          <Text style={styles.eventTitle} numberOfLines={1}>{item.title}</Text>
-          <View style={styles.locationContainer}>
-            <Ionicons name="location" size={14} color={Colors.primary} />
-            <Text style={styles.locationText}>{item.location}</Text>
-          </View>
-          <Text style={styles.priceText}>
-            <Text style={styles.priceValue}>{item.price}</Text> /Person
-          </Text>
+        </View>
+
+        <View style={styles.cardButtons}>
+          {activeTab === 'upcoming' ? (
+            <>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={async () => {
+                  try {
+                    const eventId = event.id || event._id;
+                    const purchaseId = item.id || item._id;
+                    if (eventId && purchaseId) {
+                      await eventService.cancelTicketPurchase(eventId, purchaseId);
+                      fetchTickets();
+                    }
+                  } catch (e) {
+                    console.error('Failed to cancel ticket purchase:', e);
+                  }
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.eTicketButton}
+                onPress={() => {
+                  store.dispatch(setLastPurchase({ ticket: item }));
+                  const eventId = event.id || event._id || item.eventId;
+                  const purchaseId = item.id || item._id || item.purchaseId;
+                  router.push({
+                    pathname: '/e-ticket',
+                    params: { eventId, purchaseId }
+                  });
+                }}
+              >
+                <Text style={styles.eTicketButtonText}>E-Ticket</Text>
+              </TouchableOpacity>
+            </>
+          ) : activeTab === 'completed' ? (
+            <>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => router.push('/tickets/review')}
+              >
+                <Text style={styles.cancelButtonText}>Leave Review</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.eTicketButton}
+                onPress={() => {
+                  store.dispatch(setLastPurchase({ ticket: item }));
+                  const eventId = event.id || event._id || item.eventId;
+                  const purchaseId = item.id || item._id || item.purchaseId;
+                  router.push({
+                    pathname: '/e-ticket',
+                    params: { eventId, purchaseId }
+                  });
+                }}
+              >
+                <Text style={styles.eTicketButtonText}>E-Ticket</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
       </View>
+    );
+  };
 
-      <View style={styles.cardButtons}>
-        {activeTab === 'upcoming' ? (
-          <>
-            <TouchableOpacity style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.eTicketButton}>
-              <Text style={styles.eTicketButtonText}>E-Ticket</Text>
-            </TouchableOpacity>
-          </>
-        ) : activeTab === 'completed' ? (
-          <>
-            <TouchableOpacity 
-              style={styles.cancelButton}
-              onPress={() => router.push('/tickets/review')}
-            >
-              <Text style={styles.cancelButtonText}>Leave Review</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.eTicketButton}>
-              <Text style={styles.eTicketButtonText}>E-Ticket</Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
+  const renderEmptyState = () => {
+    if (loading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconContainer}>
+          <MaterialCommunityIcons name="ticket-outline" size={40} color={Colors.primary} />
+        </View>
+        <Text style={styles.emptyTitle}>No tickets yet</Text>
+        <Text style={styles.emptySubtitle}>Discover events and secure your spot instantly</Text>
+        <TouchableOpacity style={styles.exploreButton} onPress={() => router.push('/(tabs)')}>
+          <Text style={styles.exploreButtonText}>Explore Events</Text>
+        </TouchableOpacity>
       </View>
-    </View>
-  );
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <View style={styles.emptyIconContainer}>
-        <MaterialCommunityIcons name="ticket-outline" size={40} color={Colors.primary} />
-      </View>
-      <Text style={styles.emptyTitle}>No tickets yet</Text>
-      <Text style={styles.emptySubtitle}>Discover events and secure your spot instantly</Text>
-      <TouchableOpacity style={styles.exploreButton} onPress={() => router.push('/(tabs)')}>
-        <Text style={styles.exploreButtonText}>Explore Events</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const data = ticketsData[activeTab] || [];
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -189,9 +205,9 @@ export default function TicketsMain() {
       </View>
 
       <FlatList
-        data={data}
+        data={tickets}
         renderItem={renderTicketItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id || item._id || String(Math.random())}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}

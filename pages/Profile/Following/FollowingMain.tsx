@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,35 +8,97 @@ import {
   StatusBar,
   FlatList,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { userService } from '@/services/userService';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+import { Colors } from '@/constants/Colors';
+import UserAvatar from '@/components/UserAvatar';
 
 export default function FollowingMain() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+  const [loading, setLoading] = useState(true);
+  const [followers, setFollowers] = useState<any[]>([]);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  const followingList = [
-    { id: '1', name: 'Sophia Carter', image: require('@/assets/images/artist_event.png') },
-    { id: '2', name: 'Malik Johnson', image: require('@/assets/images/burna_boy.png') },
-    { id: '3', name: 'Elena Rossi', image: require('@/assets/images/dav.png') },
-    { id: '4', name: 'Hiroshi Tanaka', image: require('@/assets/images/davido.png') },
-    { id: '5', name: 'Amina Yusuf', image: require('@/assets/images/modu.png') },
-    { id: '6', name: 'Diego Morales', image: require('@/assets/images/odumodu.png') },
-    { id: '7', name: 'Priya Sharma', image: require('@/assets/images/skibi.png') },
-  ];
+  const loadFollowData = async () => {
+    try {
+      const followersData = await userService.getFollowers();
+      const followingData = await userService.getFollowing();
 
-  const renderItem = ({ item }: { item: typeof followingList[0] }) => (
-    <View style={styles.itemContainer}>
-      <View style={styles.itemLeft}>
-        <Image source={item.image} style={styles.itemImage} />
-        <Text style={styles.itemName}>{item.name}</Text>
+      setFollowers(Array.isArray(followersData) ? followersData : []);
+      
+      const followedIds = Array.isArray(followingData) 
+        ? followingData.map((f: any) => String(f.id || f.userId))
+        : [];
+      setFollowingIds(followedIds);
+    } catch (err) {
+      console.warn('[FollowingMain] Error loading follow data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFollowData();
+  }, []);
+
+  const handleFollowToggle = async (userId: string) => {
+    setActionLoadingId(userId);
+    try {
+      const isFollowing = followingIds.includes(userId);
+      await userService.followArtist(userId);
+      
+      if (isFollowing) {
+        setFollowingIds(prev => prev.filter(id => id !== userId));
+        dispatch(showToast({ type: 'success', message: 'Unfollowed successfully' }));
+      } else {
+        setFollowingIds(prev => [...prev, userId]);
+        dispatch(showToast({ type: 'success', message: 'Followed successfully' }));
+      }
+    } catch (err) {
+      console.error('[FollowingMain] Follow toggle failed:', err);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const renderItem = ({ item }: { item: any }) => {
+    const userId = String(item.id || item.userId);
+    const isFollowing = followingIds.includes(userId);
+    const userName = item.fullName || item.name || item.username;
+
+    return (
+      <View style={styles.itemContainer}>
+        <View style={styles.itemLeft}>
+          <UserAvatar avatarUrl={item.profilePictureUrl || item.avatarUrl} name={userName} size={48} />
+          <View style={styles.textContainer}>
+            <Text style={styles.itemName}>{userName || 'User'}</Text>
+            <Text style={styles.itemUsername}>@{item.username || 'username'}</Text>
+          </View>
+        </View>
+        <TouchableOpacity 
+          style={[styles.followBtn, isFollowing && styles.followingBtn]}
+          onPress={() => handleFollowToggle(userId)}
+          disabled={actionLoadingId === userId}
+        >
+          {actionLoadingId === userId ? (
+            <ActivityIndicator size="small" color={isFollowing ? Colors.primary : "#FFF"} />
+          ) : (
+            <Text style={[styles.followBtnText, isFollowing && styles.followingBtnText]}>
+              {isFollowing ? 'Following' : 'Follow Back'}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.followBackBtn}>
-        <Text style={styles.followBackBtnText}>Follow Back</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -51,13 +113,22 @@ export default function FollowingMain() {
         <View style={{ width: 44 }} />
       </View>
 
-      <FlatList
-        data={followingList}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+      ) : followers.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={48} color="#CCC" />
+          <Text style={styles.emptyText}>No followers found</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={followers}
+          renderItem={renderItem}
+          keyExtractor={(item) => String(item.id || item.userId || Math.random())}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -117,22 +188,50 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
   },
+  textContainer: {
+    flex: 1,
+    gap: 2,
+  },
   itemName: {
     fontSize: 15,
     fontWeight: '600',
     color: '#1A1A1A',
-    flexShrink: 1,
   },
-  followBackBtn: {
+  itemUsername: {
+    fontSize: 12,
+    color: '#888',
+  },
+  followBtn: {
     backgroundColor: '#7B39FD',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 90,
   },
-  followBackBtnText: {
+  followBtnText: {
     color: '#FFF',
     fontSize: 11,
     fontWeight: '700',
+  },
+  followingBtn: {
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#7B39FD',
+  },
+  followingBtnText: {
+    color: '#7B39FD',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: '#999',
+    marginTop: 10,
+    fontWeight: '500',
   },
 });

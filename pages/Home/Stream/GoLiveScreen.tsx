@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dimensions,
     KeyboardAvoidingView,
@@ -11,42 +11,19 @@ import {
     View,
     Modal,
     Image,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import { liveStreamService } from '@/services/liveStreamService';
+import { socketService } from '@/services/socketService';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const CIRCLE_SIZE = (width - 48 - 40) / 3; // 3 cols with padding + gaps
-
-const CATEGORIES = [
-    'Music',
-    'DJ Session',
-    'Podcast',
-    'Event Stream',
-    'Interview',
-];
-
-const PRIVACY_OPTIONS = [
-    'All',
-    'Public',
-    'Followers Only',
-    'Ticket Holders Only',
-    'Private Invite',
-];
-
-const GUESTS = [
-    { id: '1', avatar: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?q=80&w=200' }, // Random male face
-    { id: '2', avatar: null },
-    { id: '3', avatar: null },
-    { id: '4', avatar: null },
-    { id: '5', avatar: null },
-    { id: '6', avatar: null },
-    { id: '7', avatar: null },
-    { id: '8', avatar: null },
-    { id: '9', avatar: null },
-];
+const DEFAULT_CATEGORIES = ['Music', 'DJ Session', 'Podcast', 'Event Stream', 'Interview', 'Nightlife', 'Gaming'];
+const DEFAULT_PRIVACY = ['All', 'Public', 'Followers Only', 'Ticket Holders Only', 'Private Invite'];
 
 export default function GoLiveScreen() {
     const params = useLocalSearchParams<{ mode?: 'voice' | 'camera' }>();
@@ -54,33 +31,115 @@ export default function GoLiveScreen() {
     const [streamTitle, setStreamTitle] = useState('');
     const [ticketPrice, setTicketPrice] = useState('');
     const [audioMode, setAudioMode] = useState<'voice' | 'camera'>(params.mode || 'camera');
-    
-    // Sync state if params change
-    React.useEffect(() => {
-        if (params.mode) {
-            setAudioMode(params.mode);
-        }
-    }, [params.mode]);
+    const [coverImage, setCoverImage] = useState<string | null>(null);
+    const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+    const [privacyOptions, setPrivacyOptions] = useState<string[]>(DEFAULT_PRIVACY);
+    const [creating, setCreating] = useState(false);
     
     // Modal states
     const [category, setCategory] = useState('');
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     
-    const [privacy, setPrivacy] = useState('All');
+    const [privacy, setPrivacy] = useState('');
     const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+
+    useEffect(() => {
+        if (params.mode) {
+            setAudioMode(params.mode);
+        }
+    }, [params.mode]);
+
+    useEffect(() => {
+        liveStreamService.getCreateOptions()
+            .then((data: any) => {
+                if (data?.categories?.length) {
+                    setCategories(data.categories.map((c: any) => c.label || c.name || c));
+                }
+                if (data?.privacyOptions?.length) {
+                    setPrivacyOptions(data.privacyOptions.map((p: any) => p.label || p.name || p));
+                }
+            })
+            .catch(() => {/* keep defaults */});
+    }, []);
 
     const toggleMode = () => {
         setAudioMode(audioMode === 'voice' ? 'camera' : 'voice');
+    };
+
+    const pickCoverImage = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                aspect: [16, 9],
+                quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets?.[0]?.uri) {
+                setCoverImage(result.assets[0].uri);
+            }
+        } catch (err) {
+            console.warn('[GoLiveScreen] Pick image error:', err);
+        }
+    };
+
+    const handleNext = async () => {
+        if (creating) return;
+        setCreating(true);
+        try {
+            const result = await liveStreamService.createStream({
+                title: streamTitle.trim() || 'Live Session',
+                category: category || categories[0] || 'Music',
+                privacy: privacy || 'Public',
+                ticketPrice: ticketPrice ? parseFloat(ticketPrice) : 0,
+                coverUrl: coverImage || undefined,
+            });
+            const streamId =
+                result?.liveStream?.id ||
+                result?.id ||
+                result?.stream?.id ||
+                result?.data?.liveStream?.id ||
+                result?.data?.id;
+
+            // Connect socket in real-time
+            socketService.connect();
+            if (streamId) {
+                socketService.joinRoom(`livestream:${streamId}`);
+            }
+
+            if (audioMode === 'camera') {
+                router.push({
+                    pathname: '/go-live-preview',
+                    params: streamId ? { id: streamId } : undefined,
+                });
+            } else {
+                router.push({
+                    pathname: '/live-dashboard',
+                    params: streamId ? { id: streamId } : undefined,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to create stream:', error);
+            if (audioMode === 'camera') {
+                router.push('/go-live-preview');
+            } else {
+                router.push('/live-dashboard');
+            }
+        } finally {
+            setCreating(false);
+        }
     };
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
-                    <Ionicons name="close" size={20} color="#FFF" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Go live</Text>
+                <View style={styles.headerLeft}>
+                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.8}>
+                        <Ionicons name="arrow-back" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Go live</Text>
+                </View>
                 <TouchableOpacity
                     style={styles.switchBtn}
                     onPress={toggleMode}
@@ -106,158 +165,87 @@ export default function GoLiveScreen() {
                     contentContainerStyle={styles.scrollContent}
                     keyboardShouldPersistTaps="handled"
                 >
-                    {audioMode === 'camera' ? (
-                        <>
-                            {/* Live Cover Picker */}
-                            <View style={styles.coverPickerContainer}>
-                                <TouchableOpacity style={styles.coverPickerCircle} activeOpacity={0.8}>
-                                    <MaterialCommunityIcons name="layers-plus" size={32} color="#FFF" />
-                                </TouchableOpacity>
-                                <Text style={styles.coverTitle}>Live Cover</Text>
-                                <Text style={styles.coverSubtitle}>This becomes stream preview.</Text>
-                            </View>
+                    {/* Live Cover Picker */}
+                    <View style={styles.coverPickerContainer}>
+                        <TouchableOpacity style={styles.coverPickerCircle} activeOpacity={0.8} onPress={pickCoverImage}>
+                            {coverImage ? (
+                                <Image source={{ uri: coverImage }} style={styles.coverImagePreview} />
+                            ) : (
+                                <MaterialCommunityIcons name="image-plus" size={28} color="#FFF" />
+                            )}
+                        </TouchableOpacity>
+                        <Text style={styles.coverTitle}>Live Cover</Text>
+                        <Text style={styles.coverSubtitle}>This becomes stream preview.</Text>
+                    </View>
 
-                            {/* Stream Title */}
-                            <View style={styles.inputRow}>
-                                <TextInput
-                                    style={styles.textInput}
-                                    placeholder="Stream Title"
-                                    placeholderTextColor="#9CA3AF"
-                                    value={streamTitle}
-                                    onChangeText={setStreamTitle}
-                                />
-                            </View>
+                    {/* Form Inputs */}
+                    <View style={styles.formContainer}>
+                        {/* Stream Title */}
+                        <View style={styles.inputRow}>
+                            <TextInput
+                                style={styles.textInput}
+                                placeholder="Stream Title"
+                                placeholderTextColor="#7C808B"
+                                value={streamTitle}
+                                onChangeText={setStreamTitle}
+                            />
+                        </View>
 
-                            {/* Live Category */}
-                            <TouchableOpacity
-                                style={styles.inputRow}
-                                activeOpacity={0.8}
-                                onPress={() => setShowCategoryModal(true)}
-                            >
-                                <Text style={[styles.textInput, !category && { color: '#9CA3AF' }]}>
-                                    {category || 'Live Category'}
-                                </Text>
-                                <Ionicons name="chevron-down" size={20} color="#FFF" />
-                            </TouchableOpacity>
+                        {/* Live Category */}
+                        <TouchableOpacity
+                            style={styles.inputRow}
+                            activeOpacity={0.8}
+                            onPress={() => setShowCategoryModal(true)}
+                        >
+                            <Text style={[styles.textInput, !category && { color: '#7C808B' }]}>
+                                {category || 'Live Category'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color="#9CA3AF" />
+                        </TouchableOpacity>
 
-                            {/* Privacy Settings */}
-                            <TouchableOpacity
-                                style={styles.inputRow}
-                                activeOpacity={0.8}
-                                onPress={() => setShowPrivacyModal(true)}
-                            >
-                                <Text style={[styles.textInput, !privacy && { color: '#9CA3AF' }]}>
-                                    {privacy ? privacy : 'Privacy Settings'}
-                                </Text>
-                                <Ionicons name="chevron-down" size={20} color="#FFF" />
-                            </TouchableOpacity>
+                        {/* Privacy Settings */}
+                        <TouchableOpacity
+                            style={styles.inputRow}
+                            activeOpacity={0.8}
+                            onPress={() => setShowPrivacyModal(true)}
+                        >
+                            <Text style={[styles.textInput, !privacy && { color: '#7C808B' }]}>
+                                {privacy || 'Privacy Settings'}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color="#9CA3AF" />
+                        </TouchableOpacity>
 
-                            {/* Ticket Price */}
-                            <View style={styles.inputRow}>
-                                <TextInput
-                                    style={styles.textInput}
-                                    placeholder="Ticket Price"
-                                    placeholderTextColor="#9CA3AF"
-                                    value={ticketPrice}
-                                    onChangeText={setTicketPrice}
-                                    keyboardType="numeric"
-                                />
-                            </View>
-                            <Text style={styles.feesText}>Fees 3%</Text>
-                        </>
-                    ) : (
-                        <>
-                            {/* Voice Mode Content */}
-                            <View style={{ height: 24 }} />
-                            
-                            {/* Stream Title */}
-                            <View style={styles.inputRow}>
-                                <TextInput
-                                    style={styles.textInput}
-                                    placeholder="Stream Title"
-                                    placeholderTextColor="#9CA3AF"
-                                    value={streamTitle}
-                                    onChangeText={setStreamTitle}
-                                />
-                            </View>
-                            
-                            {/* Ticket Price */}
-                            <View style={styles.inputRow}>
-                                <TextInput
-                                    style={styles.textInput}
-                                    placeholder="Ticket Price"
-                                    placeholderTextColor="#9CA3AF"
-                                    value={ticketPrice}
-                                    onChangeText={setTicketPrice}
-                                    keyboardType="numeric"
-                                />
-                            </View>
-                            <Text style={styles.feesText}>Fees 3%</Text>
-
-                            {/* 3x3 Grid */}
-                            <View style={styles.guestGrid}>
-                                {GUESTS.map((guest, index) => (
-                                    <TouchableOpacity 
-                                        key={guest.id} 
-                                        style={styles.guestCircle}
-                                        activeOpacity={0.8}
-                                        onPress={() => router.push('/invite-friends')}
-                                    >
-                                        {guest.avatar ? (
-                                            <Image source={{ uri: guest.avatar }} style={styles.guestAvatar} />
-                                        ) : (
-                                            <Ionicons name="person" size={CIRCLE_SIZE * 0.45} color="#5A5A5A" />
-                                        )}
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </>
-                    )}
+                        {/* Ticket Price */}
+                        <View style={styles.inputRow}>
+                            <TextInput
+                                style={styles.textInput}
+                                placeholder="Ticket Price"
+                                placeholderTextColor="#7C808B"
+                                value={ticketPrice}
+                                onChangeText={setTicketPrice}
+                                keyboardType="numeric"
+                            />
+                        </View>
+                        <Text style={styles.feesText}>Fees 3%</Text>
+                    </View>
                 </ScrollView>
 
-                {/* Bottom CTA */}
+                {/* Bottom CTA Button */}
                 <View style={styles.bottomContainer}>
                     <TouchableOpacity
-                        style={styles.goLiveBtn}
-                        activeOpacity={0.85}
-                        onPress={() => router.push(audioMode === 'camera' ? '/go-live-preview' : '/live-dashboard')}
+                        style={styles.nextBtn}
+                        activeOpacity={0.88}
+                        onPress={handleNext}
+                        disabled={creating}
                     >
-                        <Text style={styles.goLiveBtnText}>
-                            {audioMode === 'camera' ? 'Next' : 'Go LIVE'}
-                        </Text>
+                        {creating ? (
+                            <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                            <Text style={styles.nextBtnText}>
+                                {audioMode === 'camera' ? 'Next' : 'Go LIVE'}
+                            </Text>
+                        )}
                     </TouchableOpacity>
-
-                    {/* Toggle bar - Only shown in Voice mode as per screenshot */}
-                    {audioMode === 'voice' && (
-                        <View style={styles.toggleBar}>
-                            <TouchableOpacity
-                                style={styles.toggleItem}
-                                onPress={() => setAudioMode('voice')}
-                            >
-                                <MaterialCommunityIcons
-                                    name="phone-in-talk"
-                                    size={16}
-                                    color="#FFF"
-                                />
-                                <Text style={[styles.toggleText, styles.toggleTextActive]}>
-                                    Voice Chart
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.toggleItem}
-                                onPress={() => setAudioMode('camera')}
-                            >
-                                <MaterialCommunityIcons
-                                    name="camera"
-                                    size={16}
-                                    color="rgba(255,255,255,0.5)"
-                                />
-                                <Text style={styles.toggleText}>
-                                    Device Camera
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
                 </View>
             </KeyboardAvoidingView>
 
@@ -265,18 +253,25 @@ export default function GoLiveScreen() {
             <Modal visible={showCategoryModal} transparent animationType="fade">
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryModal(false)}>
                     <View style={styles.modalContent}>
-                        {CATEGORIES.map((cat, idx) => (
-                            <TouchableOpacity
-                                key={idx}
-                                style={styles.modalOption}
-                                onPress={() => {
-                                    setCategory(cat);
-                                    setShowCategoryModal(false);
-                                }}
-                            >
-                                <Text style={styles.modalOptionText}>{cat}</Text>
-                            </TouchableOpacity>
-                        ))}
+                        <Text style={styles.modalHeaderTitle}>Select Category</Text>
+                        {categories.map((cat: string, idx: number) => {
+                            const isSelected = category === cat;
+                            return (
+                                <TouchableOpacity
+                                    key={idx}
+                                    style={styles.modalOptionRow}
+                                    onPress={() => {
+                                        setCategory(cat);
+                                        setShowCategoryModal(false);
+                                    }}
+                                >
+                                    <Text style={[styles.modalOptionText, isSelected && { color: '#A78BFA', fontWeight: '700' }]}>
+                                        {cat}
+                                    </Text>
+                                    {isSelected && <Ionicons name="checkmark" size={20} color="#A78BFA" />}
+                                </TouchableOpacity>
+                            );
+                        })}
                     </View>
                 </TouchableOpacity>
             </Modal>
@@ -285,7 +280,8 @@ export default function GoLiveScreen() {
             <Modal visible={showPrivacyModal} transparent animationType="fade">
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPrivacyModal(false)}>
                     <View style={styles.modalContent}>
-                        {PRIVACY_OPTIONS.map((opt, idx) => {
+                        <Text style={styles.modalHeaderTitle}>Select Privacy</Text>
+                        {privacyOptions.map((opt: string, idx: number) => {
                             const isSelected = privacy === opt;
                             return (
                                 <TouchableOpacity
@@ -296,11 +292,13 @@ export default function GoLiveScreen() {
                                         setShowPrivacyModal(false);
                                     }}
                                 >
-                                    <Text style={styles.modalOptionText}>{opt}</Text>
+                                    <Text style={[styles.modalOptionText, isSelected && { color: '#A78BFA', fontWeight: '700' }]}>
+                                        {opt}
+                                    </Text>
                                     {isSelected ? (
-                                        <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+                                        <Ionicons name="checkmark-circle" size={22} color="#7C3AED" />
                                     ) : (
-                                        <Ionicons name="radio-button-off" size={24} color="#FFF" />
+                                        <Ionicons name="radio-button-off" size={22} color="#6B7280" />
                                     )}
                                 </TouchableOpacity>
                             );
@@ -308,7 +306,6 @@ export default function GoLiveScreen() {
                     </View>
                 </TouchableOpacity>
             </Modal>
-
         </SafeAreaView>
     );
 }
@@ -316,35 +313,41 @@ export default function GoLiveScreen() {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: '#3E3E3E',
+        backgroundColor: '#1E2024',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingTop: 8,
+        paddingBottom: 16,
     },
-    closeBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#2A2A2A',
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+    },
+    backBtn: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: '#2B2D33',
         justifyContent: 'center',
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: '700',
         color: '#FFF',
     },
     switchBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#8E2DE2',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 8,
+        backgroundColor: '#7C3AED',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
         gap: 6,
     },
     switchBtnText: {
@@ -353,46 +356,55 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     scrollContent: {
-        paddingHorizontal: 24,
-        paddingBottom: 20,
+        paddingHorizontal: 20,
+        paddingBottom: 24,
     },
     
     // Cover Picker
     coverPickerContainer: {
         alignItems: 'center',
-        marginTop: 40,
-        marginBottom: 40,
+        marginTop: 32,
+        marginBottom: 32,
     },
     coverPickerCircle: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
-        backgroundColor: '#5A5A5A',
+        width: 68,
+        height: 68,
+        borderRadius: 34,
+        backgroundColor: '#35383F',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 14,
+        overflow: 'hidden',
+    },
+    coverImagePreview: {
+        width: '100%',
+        height: '100%',
     },
     coverTitle: {
         color: '#FFF',
         fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 6,
+        fontWeight: '700',
+        marginBottom: 4,
     },
     coverSubtitle: {
-        color: '#A78BFA',
+        color: '#A485F6',
         fontSize: 13,
         fontWeight: '500',
     },
 
-    // Inputs
+    // Form
+    formContainer: {
+        width: '100%',
+    },
     inputRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#313131',
-        borderRadius: 12,
+        justifyContent: 'space-between',
+        backgroundColor: '#282A30',
+        borderRadius: 14,
         paddingHorizontal: 18,
-        paddingVertical: Platform.OS === 'ios' ? 18 : 14,
-        minHeight: 58,
+        paddingVertical: Platform.OS === 'ios' ? 16 : 12,
+        minHeight: 56,
         marginBottom: 14,
     },
     textInput: {
@@ -403,104 +415,68 @@ const styles = StyleSheet.create({
         padding: 0,
     },
     feesText: {
-        color: '#D1D5DB',
+        color: '#8E929E',
         fontSize: 13,
         fontWeight: '500',
         textAlign: 'right',
-        marginBottom: 24,
+        marginTop: -4,
+        marginBottom: 16,
+        paddingRight: 4,
     },
 
-    // Grid (Voice Mode)
-    guestGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 16,
-        justifyContent: 'center',
-    },
-    guestCircle: {
-        width: CIRCLE_SIZE,
-        height: CIRCLE_SIZE,
-        borderRadius: CIRCLE_SIZE / 2,
-        backgroundColor: '#313131',
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-    },
-    guestAvatar: {
-        width: '100%',
-        height: '100%',
-        borderRadius: CIRCLE_SIZE / 2,
-    },
-    
-    // Bottom
+    // Bottom Container
     bottomContainer: {
-        paddingHorizontal: 24,
+        paddingHorizontal: 20,
         paddingBottom: Platform.OS === 'ios' ? 16 : 24,
-        paddingTop: 16,
+        paddingTop: 12,
     },
-    goLiveBtn: {
-        backgroundColor: '#8E2DE2',
-        borderRadius: 32,
-        paddingVertical: 18,
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    goLiveBtnText: {
-        color: '#FFF',
-        fontSize: 17,
-        fontWeight: '600',
-    },
-    
-    // Toggle Bar
-    toggleBar: {
-        flexDirection: 'row',
+    nextBtn: {
+        backgroundColor: '#7C3AED',
+        borderRadius: 28,
+        height: 54,
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 12,
     },
-    toggleItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        gap: 6,
-    },
-    toggleText: {
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    toggleTextActive: {
+    nextBtnText: {
         color: '#FFF',
+        fontSize: 16,
+        fontWeight: '700',
     },
 
     // Modals
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.7)',
         justifyContent: 'center',
         alignItems: 'center',
+        paddingHorizontal: 24,
     },
     modalContent: {
-        width: width * 0.8,
-        backgroundColor: '#9CA3AF',
-        borderRadius: 16,
-        paddingVertical: 10,
+        width: width * 0.85,
+        backgroundColor: '#2B2D33',
+        borderRadius: 20,
+        paddingVertical: 18,
+        paddingHorizontal: 20,
     },
-    modalOption: {
-        paddingVertical: 16,
-        paddingHorizontal: 24,
+    modalHeaderTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#FFF',
+        marginBottom: 12,
+        paddingHorizontal: 4,
     },
     modalOptionRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 16,
-        paddingHorizontal: 24,
+        paddingVertical: 14,
+        paddingHorizontal: 8,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: '#3A3C44',
     },
     modalOptionText: {
-        color: '#FFF',
-        fontSize: 16,
+        color: '#E5E7EB',
+        fontSize: 15,
         fontWeight: '500',
     },
 });

@@ -2,53 +2,58 @@ import React, { useState, useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import { liveStreamService } from '@/services/liveStreamService';
 
 export default function FloatingStreamBanner() {
     const [visible, setVisible] = useState(false);
+    const [activeStream, setActiveStream] = useState<any>(null);
     const [fadeAnim] = useState(new Animated.Value(0));
 
     useFocusEffect(
         useCallback(() => {
-            // Show after 3 seconds
-            const showTimer = setTimeout(() => {
-                setVisible(true);
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 500,
-                    useNativeDriver: true,
-                }).start();
-            }, 3000);
-
-            // Hide after 15 seconds
-            const hideTimer = setTimeout(() => {
-                Animated.timing(fadeAnim, {
-                    toValue: 0,
-                    duration: 500,
-                    useNativeDriver: true,
-                }).start(() => setVisible(false));
-            }, 15000);
+            let activeTimer: any;
+            
+            // Fetch live streams from backend
+            liveStreamService.getActiveStreams()
+                .then((res) => {
+                    const list = Array.isArray(res) ? res : res?.items || [];
+                    if (list.length > 0) {
+                        const stream = list[0]; // grab the most relevant active live stream
+                        setActiveStream(stream);
+                        
+                        // Show banner after 3 seconds
+                        activeTimer = setTimeout(() => {
+                            setVisible(true);
+                            Animated.timing(fadeAnim, {
+                                toValue: 1,
+                                duration: 500,
+                                useNativeDriver: true,
+                            }).start();
+                        }, 3000);
+                    }
+                })
+                .catch(() => {});
 
             return () => {
-                clearTimeout(showTimer);
-                clearTimeout(hideTimer);
+                clearTimeout(activeTimer);
                 setVisible(false);
                 fadeAnim.setValue(0);
             };
         }, [fadeAnim])
     );
 
-    if (!visible) return null;
+    if (!visible || !activeStream) return null;
 
     return (
         <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
             <TouchableOpacity 
                 style={styles.bannerContent}
                 activeOpacity={0.9}
-                onPress={() => router.push('/live-details')}
+                onPress={() => router.push({ pathname: '/live-details', params: { id: activeStream.id } })}
             >
                 <View style={styles.leftContent}>
                     <MaterialCommunityIcons name="waveform" size={20} color="#FFF" />
-                    <Text style={styles.title}>Worship De King</Text>
+                    <Text style={styles.title} numberOfLines={1}>{activeStream.title || 'Live Stream'}</Text>
                     <Ionicons name="chevron-forward-circle" size={16} color="#FFF" style={styles.arrowIcon} />
                 </View>
                 <View style={styles.streamBtn}>
@@ -83,12 +88,15 @@ const styles = StyleSheet.create({
     leftContent: {
         flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
+        marginRight: 10,
     },
     title: {
         color: '#FFF',
         fontSize: 16,
         fontWeight: '600',
         marginLeft: 12,
+        flex: 1,
     },
     arrowIcon: {
         marginLeft: 8,

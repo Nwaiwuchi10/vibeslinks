@@ -136,7 +136,7 @@ export default function WelcomeScreen({ onGetStarted, onSignIn }: WelcomeScreenP
           {
             opacity: fadeAnim,
             transform: [{ translateY: slideAnim }],
-            paddingBottom: insets.bottom + 24,
+            paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + 12,
           },
         ]}
       >

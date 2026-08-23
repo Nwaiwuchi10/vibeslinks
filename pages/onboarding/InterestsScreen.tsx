@@ -1,16 +1,18 @@
 import { Colors } from '@/constants/Colors';
+import { userService } from '@/services/userService';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { store } from '@/store';
 
 interface Interest {
   id: string;
@@ -32,7 +34,17 @@ const INTERESTS: Interest[] = [
 ];
 
 export default function InterestsScreen() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
   const [selected, setSelected] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    const token = store.getState().auth?.token;
+    console.log('\n====================================');
+    console.log('ACTIVE USER JWT ACCESS TOKEN:');
+    console.log(token);
+    console.log('====================================\n');
+  }, []);
 
   const toggleInterest = (id: string) => {
     if (selected.includes(id)) {
@@ -41,6 +53,27 @@ export default function InterestsScreen() {
       if (selected.length < 5) {
         setSelected([...selected, id]);
       }
+    }
+  };
+
+  const handleNext = async () => {
+    try {
+      const selectedNames = selected
+        .map((id) => INTERESTS.find((item) => item.id === id)?.name)
+        .filter(Boolean) as string[];
+
+      // Save interests to the user profile
+      await userService.updateProfile({
+        interests: selectedNames,
+      });
+
+      // Mark the interests onboarding step as completed
+      await userService.patchMyOnboarding(1, true);
+
+      router.push('/(onboarding)/location' as any);
+    } catch (err: any) {
+      console.error('[InterestsScreen] handleNext error:', err?.response?.data || err);
+      // apiClient handles toasts
     }
   };
 
@@ -58,7 +91,7 @@ export default function InterestsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View style={styles.progressContainer}>
           <View style={styles.progressBarBg}>
@@ -92,11 +125,11 @@ export default function InterestsScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + bottomPad }]}>
         <TouchableOpacity
           style={[styles.nextButton, selected.length === 0 && styles.nextButtonDisabled]}
           activeOpacity={0.88}
-          onPress={() => router.push('/(onboarding)/location' as any)}
+          onPress={handleNext}
         >
           <Text style={styles.nextButtonText}>Next</Text>
         </TouchableOpacity>
@@ -104,6 +137,7 @@ export default function InterestsScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {

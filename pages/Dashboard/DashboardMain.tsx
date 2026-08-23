@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,19 +10,84 @@ import {
   Platform,
   Dimensions,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useAppSelector } from '@/store/hooks';
+import { hostService } from '@/services/hostService';
+import { Colors } from '@/constants/Colors';
+import UserAvatar from '@/components/UserAvatar';
 
 const { width } = Dimensions.get('window');
 
+const RANGE_MAP: Record<string, 'today' | 'thisMonth' | 'lastMonth' | 'allTime'> = {
+  'Today': 'today',
+  'This Month': 'thisMonth',
+  'Last Month': 'lastMonth',
+  'All Time': 'allTime',
+};
+
 export default function DashboardMain() {
   const router = useRouter();
+  const { user } = useAppSelector((state) => state.auth);
+  const overview = useAppSelector((state) => state.host.overview);
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState('Last Month');
   const [engagementModalVisible, setEngagementModalVisible] = useState(false);
   const [engagementDateRange, setEngagementDateRange] = useState('Today');
+  const [loading, setLoading] = useState(true);
+  const [engagementLoading, setEngagementLoading] = useState(false);
+  const [audienceData, setAudienceData] = useState<any>(null);
+
+  const fetchOverview = async (range: string) => {
+    setLoading(true);
+    try {
+      await hostService.getOverview(RANGE_MAP[range] || 'lastMonth');
+    } catch (err) {
+      console.warn('[Dashboard] Overview fetch failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchEngagement = async (range: string) => {
+    setEngagementLoading(true);
+    try {
+      const data = await hostService.getAudience(RANGE_MAP[range] || 'today');
+      setAudienceData(data);
+    } catch (err) {
+      console.warn('[Dashboard] Audience fetch failed:', err);
+    } finally {
+      setEngagementLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOverview(selectedDateRange);
+  }, [selectedDateRange]);
+
+  useEffect(() => {
+    fetchEngagement(engagementDateRange);
+  }, [engagementDateRange]);
+
+  // Extract overview stats with safe fallbacks
+  const stats = overview?.summary || overview?.stats || {};
+  const ticketsSold = stats.ticketsSold ?? stats.tickets_sold ?? overview?.ticketsSold ?? '—';
+  const revenue = stats.revenue ?? overview?.revenue ?? null;
+  const audienceReach = stats.reach ?? stats.audienceReach ?? overview?.reach ?? '—';
+  const activeCampaigns = stats.activeCampaigns ?? overview?.activeCampaigns ?? '—';
+  const engagement = audienceData?.summary || audienceData?.audienceEngagement ||
+    overview?.audienceEngagement || overview?.engagement || {};
+  const newFollowers = engagement.newFollowersCount ?? engagement.newFollowers ?? '—';
+  const eventSaves = engagement.savesCount ?? engagement.eventSaves ?? '—';
+  const shares = engagement.sharesCount ?? engagement.shares ?? '—';
+  const upcomingEvents: any[] = overview?.upcomingEvents || [];
+
+  const fmtRevenue = revenue != null
+    ? `₦${Number(revenue).toLocaleString()}`
+    : '—';
 
   const handleSelectDateRange = (range: string) => {
     setSelectedDateRange(range);
@@ -46,15 +111,16 @@ export default function DashboardMain() {
         {/* Profile / Host Header */}
         <View style={styles.hostHeader}>
           <View style={styles.hostInfo}>
-            <TouchableOpacity style={styles.backBtnCircle} onPress={() => router.back()}>
+            <TouchableOpacity style={styles.backBtnCircle} onPress={() => router.push('/(tabs)/profile')}>
               <Ionicons name="arrow-back" size={20} color="#1A1A1A" />
             </TouchableOpacity>
-            <Image 
-              source={require('@/assets/images/dav.png')} 
-              style={styles.hostAvatar} 
+            <UserAvatar 
+              avatarUrl={user?.profilePictureUrl || user?.avatarUrl} 
+              name={user?.fullName || user?.name || 'Vibez Host'} 
+              size={44} 
             />
             <View style={styles.hostTextCol}>
-              <Text style={styles.hostName}>Roland Emmanuel</Text>
+              <Text style={styles.hostName}>{user?.fullName || user?.name || 'Vibez Host'}</Text>
               <Text style={styles.hostWelcome}>Welcome Back</Text>
             </View>
           </View>
@@ -81,6 +147,9 @@ export default function DashboardMain() {
             </TouchableOpacity>
           </View>
 
+          {loading ? (
+            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+          ) : (
           <View style={styles.statsGrid}>
             {/* Tickets Sold */}
             <TouchableOpacity 
@@ -88,7 +157,7 @@ export default function DashboardMain() {
               onPress={() => router.push('/dashboard/analytics/tickets-sold')}
             >
               <View style={styles.gridTop}>
-                <Text style={styles.gridValue}>2,540</Text>
+                <Text style={styles.gridValue}>{typeof ticketsSold === 'number' ? ticketsSold.toLocaleString() : String(ticketsSold)}</Text>
                 <View style={styles.arrowCircle}>
                   <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
                 </View>
@@ -102,7 +171,7 @@ export default function DashboardMain() {
               onPress={() => router.push('/dashboard/analytics/all-tickets')}
             >
               <View style={styles.gridTop}>
-                <Text style={styles.gridValue}>₦12,540,000</Text>
+                <Text style={styles.gridValue}>{fmtRevenue}</Text>
               </View>
               <Text style={styles.gridLabel}>Revenue</Text>
             </TouchableOpacity>
@@ -113,15 +182,15 @@ export default function DashboardMain() {
               onPress={() => router.push('/dashboard/analytics/reach')}
             >
               <View style={styles.gridTop}>
-                <Text style={styles.gridValue}>45,000</Text>
+                <Text style={styles.gridValue}>{typeof audienceReach === 'number' ? audienceReach.toLocaleString() : String(audienceReach)}</Text>
               </View>
               <Text style={styles.gridLabel}>Audience Reach</Text>
             </TouchableOpacity>
 
             {/* Active Campaigns */}
-            <TouchableOpacity style={styles.gridBox}>
+            <TouchableOpacity style={styles.gridBox} onPress={() => router.push('/dashboard/promotions' as any)}>
               <View style={styles.gridTop}>
-                <Text style={styles.gridValue}>4 Active</Text>
+                <Text style={styles.gridValue}>{typeof activeCampaigns === 'number' ? `${activeCampaigns} Active` : String(activeCampaigns)}</Text>
                 <View style={styles.arrowCircle}>
                   <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
                 </View>
@@ -129,6 +198,7 @@ export default function DashboardMain() {
               <Text style={styles.gridLabel}>Campaigns</Text>
             </TouchableOpacity>
           </View>
+          )}
         </View>
 
         {/* Create Event Promo Card */}
@@ -170,37 +240,50 @@ export default function DashboardMain() {
           showsHorizontalScrollIndicator={false} 
           contentContainerStyle={styles.upcomingSliderContent}
         >
-          <TouchableOpacity 
-            style={styles.upcomingCard}
-            onPress={() => router.push('/dashboard/analytics')}
-          >
-            <Image 
-              source={require('@/assets/images/ye.png')} 
-              style={styles.upcomingCardImage}
-              contentFit="cover"
-            />
-            <View style={styles.upcomingCardDetails}>
-              <View style={styles.miniStatsRow}>
-                <View style={styles.miniStatBox}>
-                  <Text style={styles.miniStatVal}>45,000</Text>
-                  <View style={styles.miniLabelRow}>
-                    <Text style={styles.miniLabel}>Tickets Sold</Text>
-                    <Ionicons name="arrow-up-outline" size={10} color="#1A1A1A" />
+          {upcomingEvents.length === 0 && !loading ? (
+            <View style={[styles.upcomingCard, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Text style={{ color: '#999', fontSize: 13 }}>No upcoming events</Text>
+            </View>
+          ) : upcomingEvents.slice(0, 5).map((evt: any, idx: number) => (
+            <TouchableOpacity 
+              key={evt.id || idx}
+              style={styles.upcomingCard}
+              onPress={() => router.push({ pathname: '/dashboard/analytics', params: { eventId: evt.id } })}
+            >
+              <Image 
+                source={evt.imageUrl || evt.coverImageUrl ? { uri: evt.imageUrl || evt.coverImageUrl } : require('@/assets/images/ye.png')} 
+                style={styles.upcomingCardImage}
+                contentFit="cover"
+              />
+              <View style={styles.upcomingCardDetails}>
+                <Text numberOfLines={1} style={{ fontWeight: '700', fontSize: 13, marginBottom: 6, color: '#1A1A1A' }}>{evt.title || 'Event'}</Text>
+                <View style={styles.miniStatsRow}>
+                  <View style={styles.miniStatBox}>
+                    <Text style={styles.miniStatVal}>{evt.ticketsSold != null ? Number(evt.ticketsSold).toLocaleString() : '—'}</Text>
+                    <View style={styles.miniLabelRow}>
+                      <Text style={styles.miniLabel}>Tickets Sold</Text>
+                      <Ionicons name="arrow-up-outline" size={10} color="#1A1A1A" />
+                    </View>
+                  </View>
+                  <View style={styles.miniStatBox}>
+                    <Text style={styles.miniStatVal}>{evt.revenue != null ? `₦${Number(evt.revenue).toLocaleString()}` : '—'}</Text>
+                    <Text style={styles.miniLabel}>Revenue</Text>
                   </View>
                 </View>
-                <View style={styles.miniStatBox}>
-                  <Text style={styles.miniStatVal}>₦431,000</Text>
-                  <Text style={styles.miniLabel}>Revenue</Text>
-                </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
 
         <View style={styles.dotIndicatorRow}>
-          <View style={[styles.dotIndicator, styles.dotActive]} />
-          <View style={styles.dotIndicator} />
-          <View style={styles.dotIndicator} />
+          {(upcomingEvents.slice(0, 5)).map((_: any, idx: number) => (
+            <View key={idx} style={[styles.dotIndicator, idx === 0 && styles.dotActive]} />
+          ))}
+          {upcomingEvents.length === 0 && [
+            <View key="d0" style={[styles.dotIndicator, styles.dotActive]} />,
+            <View key="d1" style={styles.dotIndicator} />,
+            <View key="d2" style={styles.dotIndicator} />,
+          ]}
         </View>
 
         {/* Audience Engagement Metrics */}
@@ -216,62 +299,68 @@ export default function DashboardMain() {
             </TouchableOpacity>
           </View>
 
-          {/* New Followers */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/profile/following')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="people-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>291</Text>
-                <Text style={styles.engagementLabel}>New Followers</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+          {engagementLoading ? (
+            <ActivityIndicator color="#7B39FD" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              {/* New Followers */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/profile/following')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="people-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof newFollowers === 'number' ? newFollowers.toLocaleString() : String(newFollowers)}</Text>
+                    <Text style={styles.engagementLabel}>New Followers</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
 
-          {/* Event Saves */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/dashboard/analytics/event-saves')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="bookmark-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>82</Text>
-                <Text style={styles.engagementLabel}>Event Saves</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+              {/* Event Saves */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/dashboard/analytics/event-saves')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="bookmark-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof eventSaves === 'number' ? eventSaves.toLocaleString() : String(eventSaves)}</Text>
+                    <Text style={styles.engagementLabel}>Event Saves</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
 
-          {/* Shares */}
-          <TouchableOpacity 
-            style={styles.engagementRow}
-            onPress={() => router.push('/dashboard/analytics/shares')}
-          >
-            <View style={styles.engagementLeft}>
-              <View style={styles.iconCircleBg}>
-                <Ionicons name="paper-plane-outline" size={18} color="#1A1A1A" />
-              </View>
-              <View style={styles.engagementTextCol}>
-                <Text style={styles.engagementVal}>12</Text>
-                <Text style={styles.engagementLabel}>Shares</Text>
-              </View>
-            </View>
-            <View style={styles.arrowCircle}>
-              <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
-            </View>
-          </TouchableOpacity>
+              {/* Shares */}
+              <TouchableOpacity 
+                style={styles.engagementRow}
+                onPress={() => router.push('/dashboard/analytics/shares')}
+              >
+                <View style={styles.engagementLeft}>
+                  <View style={styles.iconCircleBg}>
+                    <Ionicons name="paper-plane-outline" size={18} color="#1A1A1A" />
+                  </View>
+                  <View style={styles.engagementTextCol}>
+                    <Text style={styles.engagementVal}>{typeof shares === 'number' ? shares.toLocaleString() : String(shares)}</Text>
+                    <Text style={styles.engagementLabel}>Shares</Text>
+                  </View>
+                </View>
+                <View style={styles.arrowCircle}>
+                  <MaterialCommunityIcons name="arrow-up-right" size={14} color="#1A1A1A" />
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </ScrollView>
 

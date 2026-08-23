@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,46 +8,99 @@ import {
   StatusBar,
   FlatList,
   Platform,
+  ActivityIndicator,
+  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { userService } from '@/services/userService';
+import { Colors } from '@/constants/Colors';
+
+const APP_INVITE_LINK = 'https://vibeslink.app/invite';
 
 export default function InviteFriendsMain() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [invitedIds, setInvitedIds] = useState<string[]>([]);
 
-  const [friends, setFriends] = useState([
-    { id: '1', name: 'Sophia Carter', image: require('@/assets/images/artist_event.png'), sent: false },
-    { id: '2', name: 'Malik Johnson', image: require('@/assets/images/burna_boy.png'), sent: true },
-    { id: '3', name: 'Elena Rossi', image: require('@/assets/images/dav.png'), sent: false },
-    { id: '4', name: 'Hiroshi Tanaka', image: require('@/assets/images/davido.png'), sent: false },
-    { id: '5', name: 'Amina Yusuf', image: require('@/assets/images/modu.png'), sent: false },
-    { id: '6', name: 'Diego Morales', image: require('@/assets/images/odumodu.png'), sent: false },
-    { id: '7', name: 'Priya Sharma', image: require('@/assets/images/skibi.png'), sent: true },
-  ]);
+  useEffect(() => {
+    const loadFriends = async () => {
+      try {
+        // Load followers as the "friends" to invite
+        const data = await userService.getFollowers();
+        const items = Array.isArray(data) ? data : [];
+        setFriends(items);
+      } catch (err) {
+        console.warn('[InviteFriendsMain] Error loading friends:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadFriends();
+  }, []);
 
-  const toggleInvite = (id: string) => {
-    setFriends((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, sent: !f.sent } : f))
-    );
+  const handleInvite = async (id: string) => {
+    setInvitedIds((prev) => [...prev, id]);
+    try {
+      await Share.share({
+        message: `Join me on VibesLink! ${APP_INVITE_LINK}`,
+        url: APP_INVITE_LINK,
+      });
+    } catch (err) {
+      // Silently handle share cancel
+    }
   };
 
-  const renderItem = ({ item }: { item: typeof friends[0] }) => (
-    <View style={styles.itemContainer}>
-      <View style={styles.itemLeft}>
-        <Image source={item.image} style={styles.itemImage} />
-        <Text style={styles.itemName}>{item.name}</Text>
+  const handleCopyLink = async () => {
+    try {
+      await Share.share({
+        message: `Join me on VibesLink! ${APP_INVITE_LINK}`,
+        url: APP_INVITE_LINK,
+      });
+    } catch (err) {
+      // Silently handle share cancel
+    }
+  };
+
+  const renderItem = ({ item }: { item: any }) => {
+    const id = String(item.id || item.userId);
+    const isSent = invitedIds.includes(id);
+    const avatar = item.profilePictureUrl || item.avatarUrl;
+    const displayName = item.fullName || item.name || item.username || 'User';
+
+    return (
+      <View style={styles.itemContainer}>
+        <View style={styles.itemLeft}>
+          {avatar ? (
+            <Image source={{ uri: avatar }} style={styles.itemImage} />
+          ) : (
+            <View style={styles.itemImagePlaceholder}>
+              <Text style={styles.itemImageInitial}>
+                {displayName[0]?.toUpperCase() || '?'}
+              </Text>
+            </View>
+          )}
+          <View>
+            <Text style={styles.itemName}>{displayName}</Text>
+            {item.username && (
+              <Text style={styles.itemUsername}>@{item.username}</Text>
+            )}
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.inviteButton, isSent && styles.sentButton]}
+          onPress={() => handleInvite(id)}
+          disabled={isSent}
+        >
+          <Text style={[styles.inviteButtonText, isSent && styles.sentButtonText]}>
+            {isSent ? 'Sent' : 'Invite'}
+          </Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={[styles.inviteButton, item.sent && styles.sentButton]}
-        onPress={() => toggleInvite(item.id)}
-      >
-        <Text style={[styles.inviteButtonText, item.sent && styles.sentButtonText]}>
-          {item.sent ? 'Sent' : 'Invite'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -59,19 +112,28 @@ export default function InviteFriendsMain() {
           <Ionicons name="arrow-back" size={22} color="#1A1A1A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Invite Friends</Text>
-        <TouchableOpacity style={styles.copyLinkBtn}>
+        <TouchableOpacity style={styles.copyLinkBtn} onPress={handleCopyLink}>
           <Ionicons name="link-outline" size={16} color="#FFF" />
-          <Text style={styles.copyLinkText}>Copy Link</Text>
+          <Text style={styles.copyLinkText}>Share Link</Text>
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={friends}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+      ) : friends.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="person-add-outline" size={48} color="#CCC" />
+          <Text style={styles.emptyText}>No contacts to invite yet</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={friends}
+          renderItem={renderItem}
+          keyExtractor={(item) => String(item.id || item.userId || Math.random())}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -138,20 +200,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 15,
+    flex: 1,
   },
   itemImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  itemImagePlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemImageInitial: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: '700',
   },
   itemName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#1A1A1A',
   },
+  itemUsername: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
   inviteButton: {
     backgroundColor: '#7B39FD',
-    paddingHorizontal: 25,
+    paddingHorizontal: 22,
     paddingVertical: 10,
     borderRadius: 12,
     minWidth: 80,
@@ -163,9 +244,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sentButton: {
-    backgroundColor: '#000',
+    backgroundColor: '#1A1A1A',
   },
   sentButtonText: {
     color: '#FFF',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: '#999',
+    marginTop: 10,
+    fontWeight: '500',
   },
 });
