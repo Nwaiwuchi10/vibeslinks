@@ -1,50 +1,37 @@
-/**
- * useSocialAuth.ts
- *
- * React hooks for Google and Facebook OAuth on mobile using
- * expo-auth-session v7 (bundled with Expo SDK 54).
- *
- * ─── Google setup ────────────────────────────────────────────────────────────
- * 1. Go to https://console.cloud.google.com → APIs & Services → Credentials
- * 2. Create three OAuth 2.0 Client IDs:
- *      Type               | Notes
- *      ─────────────────────────────────────────────────────────────────────
- *      Web application    | Authorized redirect URIs → add: myapp://
- *      Android            | Package name: com.nwaiwuchi10.vibeslinks
- *      iOS                | Bundle ID:   com.nwaiwuchi10.vibeslinks
- * 3. Paste all three client IDs in the constants below.
- *
- * ─── Facebook setup ──────────────────────────────────────────────────────────
- * 1. Go to https://developers.facebook.com → Your App → App Settings → Basic
- * 2. Copy the App ID and paste below.
- * 3. In Facebook Login > Settings, add   myapp://   to Valid OAuth Redirect URIs.
- *
- * ─── Redirect URI ────────────────────────────────────────────────────────────
- * The redirect URI is built from the "scheme" in app.json ("myapp").
- * It will look like:  myapp://
- * Register exactly that string in both Google Cloud Console and Facebook Dev.
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
 import { useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Facebook from 'expo-auth-session/providers/facebook';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { router } from 'expo-router';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
-import { ssoService } from '@/services/ssoService';
+import { ssoService, SsoProfileData } from '@/services/ssoService';
+import { APP_CONFIG } from '@/services/apiClient';
 
 // Required so the in-app browser closes properly after redirect.
 WebBrowser.maybeCompleteAuthSession();
 
-// ─── PASTE YOUR REAL CREDENTIALS HERE ────────────────────────────────────────
-const GOOGLE_WEB_CLIENT_ID     = 'YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID     = 'YOUR_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com';
-const GOOGLE_ANDROID_CLIENT_ID = 'YOUR_GOOGLE_ANDROID_CLIENT_ID.apps.googleusercontent.com';
-const FACEBOOK_APP_ID          = 'YOUR_FACEBOOK_APP_ID';
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Direct App Config from apiClient (Embedded for Native Builds) ───────────
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+  APP_CONFIG.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
+  APP_CONFIG.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
+  GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_ANDROID_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+  APP_CONFIG.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+  GOOGLE_WEB_CLIENT_ID;
+const FACEBOOK_APP_ID =
+  process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ||
+  APP_CONFIG.EXPO_PUBLIC_FACEBOOK_APP_ID;
+const APPLE_SERVICE_ID =
+  process.env.EXPO_PUBLIC_APPLE_SERVICE_ID ||
+  APP_CONFIG.EXPO_PUBLIC_APPLE_SERVICE_ID;
 
 /** Redirect URI derived from the app scheme in app.json ("myapp"). */
 const REDIRECT_URI = makeRedirectUri({ scheme: 'myapp' });
@@ -60,27 +47,22 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
   const [loading, setLoading] = useState(false);
 
   // ─── Google ───────────────────────────────────────────────────────────────
-  // useIdTokenAuthRequest returns the Google ID token directly in
-  // result.params.id_token — this is the token the backend expects as
-  // { provider: 'google', credential: <id_token> }.
   const [_googleRequest, _googleResponse, promptGoogleAsync] =
-    Google.useIdTokenAuthRequest(
-      {
-        webClientId: GOOGLE_WEB_CLIENT_ID,
-        iosClientId: GOOGLE_IOS_CLIENT_ID,
-        androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-        redirectUri: REDIRECT_URI,
-      },
-    );
+    Google.useIdTokenAuthRequest({
+      clientId: GOOGLE_WEB_CLIENT_ID,
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+      androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+    });
 
   const handleGoogleAuth = useCallback(async () => {
-    // Guard: show helpful error instead of a cryptic Google 400 page.
-    if (GOOGLE_WEB_CLIENT_ID.startsWith('YOUR_')) {
+    if (!GOOGLE_WEB_CLIENT_ID || GOOGLE_WEB_CLIENT_ID.startsWith('YOUR_')) {
       dispatch(
         showToast({
           type: 'error',
           message:
-            'Google is not configured yet. Open hooks/useSocialAuth.ts and replace the placeholder client IDs.',
+            'Google OAuth client ID is not configured.',
         }),
       );
       return;
@@ -91,7 +73,6 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
       const result = await promptGoogleAsync();
 
       if (result?.type === 'dismiss' || result?.type === 'cancel') {
-        // User dismissed voluntarily — no toast
         return;
       }
 
@@ -102,7 +83,6 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
         return;
       }
 
-      // useIdTokenAuthRequest puts the ID token in result.params.id_token
       const idToken = (result as any).params?.id_token;
 
       if (!idToken) {
@@ -110,14 +90,14 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
           showToast({
             type: 'error',
             message:
-              'Google did not return an ID token. Check that the Web client ID is correct and openid scope is enabled.',
+              'Google did not return an ID token. Check client ID and scopes.',
           }),
         );
         return;
       }
 
       if (mode === 'signup') {
-        await ssoService.signUpWithSso('google', idToken, true);
+        await ssoService.signUpWithSso('google', idToken, undefined, true);
         router.replace('/(onboarding)/interests' as any);
       } else {
         await ssoService.signInWithSso('google', idToken);
@@ -126,7 +106,10 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
     } catch (err: any) {
       console.error('[useSocialAuth] Google error:', err);
       dispatch(
-        showToast({ type: 'error', message: 'Google sign-in encountered an error.' }),
+        showToast({
+          type: 'error',
+          message: err?.response?.data?.message || 'Google sign-in encountered an error.',
+        }),
       );
     } finally {
       setLoading(false);
@@ -135,20 +118,17 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
 
   // ─── Facebook ─────────────────────────────────────────────────────────────
   const [_fbRequest, _fbResponse, promptFacebookAsync] =
-    Facebook.useAuthRequest(
-      {
-        clientId: FACEBOOK_APP_ID,
-        redirectUri: REDIRECT_URI,
-      },
-    );
+    Facebook.useAuthRequest({
+      clientId: FACEBOOK_APP_ID,
+      redirectUri: REDIRECT_URI,
+    });
 
   const handleFacebookAuth = useCallback(async () => {
-    if (FACEBOOK_APP_ID.startsWith('YOUR_')) {
+    if (!FACEBOOK_APP_ID || FACEBOOK_APP_ID.startsWith('YOUR_')) {
       dispatch(
         showToast({
           type: 'error',
-          message:
-            'Facebook is not configured yet. Open hooks/useSocialAuth.ts and replace the placeholder App ID.',
+          message: 'Facebook App ID is not configured.',
         }),
       );
       return;
@@ -169,22 +149,20 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
         return;
       }
 
-      // Facebook returns the access token in result.params.access_token
       const accessToken = (result as any).params?.access_token;
 
       if (!accessToken) {
         dispatch(
           showToast({
             type: 'error',
-            message:
-              'Facebook did not return an access token. Check your Facebook App configuration.',
+            message: 'Facebook did not return an access token.',
           }),
         );
         return;
       }
 
       if (mode === 'signup') {
-        await ssoService.signUpWithSso('facebook', accessToken, true);
+        await ssoService.signUpWithSso('facebook', accessToken, undefined, true);
         router.replace('/(onboarding)/interests' as any);
       } else {
         await ssoService.signInWithSso('facebook', accessToken);
@@ -193,18 +171,94 @@ export function useSocialAuth({ mode }: UseSocialAuthOptions) {
     } catch (err: any) {
       console.error('[useSocialAuth] Facebook error:', err);
       dispatch(
-        showToast({ type: 'error', message: 'Facebook sign-in encountered an error.' }),
+        showToast({
+          type: 'error',
+          message: err?.response?.data?.message || 'Facebook sign-in encountered an error.',
+        }),
       );
     } finally {
       setLoading(false);
     }
   }, [promptFacebookAsync, mode, dispatch]);
 
+  // ─── Apple ────────────────────────────────────────────────────────────────
+  const handleAppleAuth = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      if (isAvailable) {
+        const credential = await AppleAuthentication.signInAsync({
+          requestedScopes: [
+            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+            AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          ],
+        });
+
+        const identityToken = credential.identityToken;
+        if (!identityToken) {
+          dispatch(
+            showToast({
+              type: 'error',
+              message: 'Apple authentication did not return an identity token.',
+            }),
+          );
+          return;
+        }
+
+        const firstName = credential.fullName?.givenName || undefined;
+        const lastName = credential.fullName?.familyName || undefined;
+        const fullName =
+          [firstName, lastName].filter(Boolean).join(' ') || undefined;
+        const email = credential.email || undefined;
+
+        const profileData: SsoProfileData = {
+          fullName,
+          firstName,
+          lastName,
+          email,
+        };
+
+        if (mode === 'signup') {
+          await ssoService.signUpWithSso('apple', identityToken, profileData, true);
+          router.replace('/(onboarding)/interests' as any);
+        } else {
+          await ssoService.signInWithSso('apple', identityToken, profileData);
+          router.replace('/(tabs)');
+        }
+      } else {
+        // Fallback for devices without native Apple Auth API
+        dispatch(
+          showToast({
+            type: 'info',
+            message: 'Sign in with Apple is available on iOS devices.',
+          }),
+        );
+      }
+    } catch (err: any) {
+      if (err?.code === 'ERR_REQUEST_CANCELED' || err?.code === '1001') {
+        // User cancelled Apple sign-in sheet
+        return;
+      }
+      console.error('[useSocialAuth] Apple error:', err);
+      dispatch(
+        showToast({
+          type: 'error',
+          message: err?.response?.data?.message || 'Apple sign-in encountered an error.',
+        }),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [mode, dispatch]);
+
   return {
     promptGoogleSignUp: handleGoogleAuth,
     promptGoogleSignIn: handleGoogleAuth,
     promptFacebookSignUp: handleFacebookAuth,
     promptFacebookSignIn: handleFacebookAuth,
+    promptAppleSignUp: handleAppleAuth,
+    promptAppleSignIn: handleAppleAuth,
     loading,
   };
 }

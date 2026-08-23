@@ -20,23 +20,37 @@ import * as Location from 'expo-location';
 
 export type SsoProvider = 'google' | 'facebook' | 'apple';
 
+export interface SsoProfileData {
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  pictureUrl?: string;
+}
+
 /** Build the provider-specific token payload. */
 function buildProviderPayload(
   provider: SsoProvider,
   token: string,
-): Record<string, string> {
+  extra?: SsoProfileData,
+): Record<string, any> {
+  const base: Record<string, any> = {
+    ...(extra?.fullName ? { fullName: extra.fullName } : {}),
+    ...(extra?.firstName ? { firstName: extra.firstName } : {}),
+    ...(extra?.lastName ? { lastName: extra.lastName } : {}),
+    ...(extra?.email ? { email: extra.email } : {}),
+    ...(extra?.pictureUrl ? { pictureUrl: extra.pictureUrl } : {}),
+  };
+
   switch (provider) {
     case 'google':
-      // Google Identity Services returns a credential (ID token JWT).
-      return { credential: token };
+      return { ...base, credential: token, idToken: token };
     case 'facebook':
-      // Facebook SDK returns an access token.
-      return { accessToken: token };
+      return { ...base, accessToken: token };
     case 'apple':
-      // Apple returns an identityToken.
-      return { identityToken: token };
+      return { ...base, identityToken: token, credential: token };
     default:
-      return { credential: token };
+      return { ...base, credential: token };
   }
 }
 
@@ -49,11 +63,12 @@ export const ssoService = {
   async signUpWithSso(
     provider: SsoProvider,
     providerToken: string,
+    extra?: SsoProfileData,
     acceptedTerms: boolean = true,
   ) {
     const payload = {
       provider,
-      ...buildProviderPayload(provider, providerToken),
+      ...buildProviderPayload(provider, providerToken, extra),
       acceptedTerms,
     };
 
@@ -82,11 +97,15 @@ export const ssoService = {
   },
 
   /**
-   * Sign in an existing social-linked account.
+   * Sign in an existing social-linked account (or auto-provision if new).
    * Call this from the Login screen.
    * On success the backend returns `access_token` immediately.
    */
-  async signInWithSso(provider: SsoProvider, providerToken: string) {
+  async signInWithSso(
+    provider: SsoProvider,
+    providerToken: string,
+    extra?: SsoProfileData,
+  ) {
     let latitude: number | undefined;
     let longitude: number | undefined;
     try {
@@ -102,7 +121,7 @@ export const ssoService = {
 
     const payload = {
       provider,
-      ...buildProviderPayload(provider, providerToken),
+      ...buildProviderPayload(provider, providerToken, extra),
       latitude,
       longitude,
     };
@@ -121,7 +140,10 @@ export const ssoService = {
         }),
       );
       store.dispatch(
-        showToast({ type: 'success', message: 'Logged in successfully!' }),
+        showToast({
+          type: 'success',
+          message: data?.message || 'Logged in successfully!',
+        }),
       );
     }
 

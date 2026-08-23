@@ -41,10 +41,11 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
 
-  // Real Google + Facebook OAuth hooks (signup mode)
+  // Real Google, Facebook, and Apple OAuth hooks (signup mode)
   const {
     promptGoogleSignUp,
     promptFacebookSignUp,
+    promptAppleSignUp,
     loading: ssoLoading,
   } = useSocialAuth({ mode: 'signup' });
 
@@ -186,9 +187,13 @@ export default function SignupScreen() {
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() =>
-            dispatch(showToast({ type: 'info', message: 'Apple sign-up coming soon.' }))
-          }
+          onPress={() => {
+            if (!agreed) {
+              dispatch(showToast({ type: 'warning', message: 'You must agree to the Terms and Privacy Policy.' }));
+              return;
+            }
+            promptAppleSignUp();
+          }}
           disabled={isLoading}
         />
       </View>

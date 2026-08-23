@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,30 +12,41 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { getPopularStations, getTopStations, getStationsByCountry, RadioStation } from '../../services/radioClient';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 60) / 2;
 
-const STATIONS_LAGOS = [
-  { id: '1', name: 'Wazobia FM', freq: '95.1', colors: ['#8E2DE2', '#4A00E0'] as [string, string], barColors: ['#FFF', '#DDD'] },
-  { id: '2', name: 'Brila FM', freq: '88.9', colors: ['#232526', '#414345'] as [string, string], barColors: ['#f857a6', '#ff5858'] },
-  { id: '3', name: 'Lagos Talks FM', freq: '91.3', colors: ['#232526', '#414345'] as [string, string], barColors: ['#ff8235', '#ff5858'] },
-  { id: '4', name: 'Yanga FM', freq: '89.9', colors: ['#232526', '#414345'] as [string, string], barColors: ['#4b6cb7', '#182848'] },
-];
+const getFallbackColors = (index: number): [string, string] => {
+  const colors = [
+    ['#8E2DE2', '#4A00E0'],
+    ['#f857a6', '#ff5858'],
+    ['#ff8235', '#ff5858'],
+    ['#4b6cb7', '#182848'],
+    ['#ad5389', '#3d105b'],
+    ['#00c6ff', '#0072ff'],
+    ['#f7971e', '#ffd200']
+  ];
+  return colors[index % colors.length] as [string, string];
+};
 
-const POPULAR_LAGOS = [
-  { id: 'p1', name: 'Lasgidi FM', freq: '90.1', colors: ['#232526', '#414345'] as [string, string], barColors: ['#f857a6', '#ff5858'] },
-  { id: 'p2', name: 'Adamimogo', freq: '93.1', colors: ['#232526', '#414345'] as [string, string], barColors: ['#ad5389', '#3d105b'] },
-];
+const RadioHomeScreen = ({ onSearchPress, onStationClick, radioPlayer }: { onSearchPress: () => void, onStationClick: (station: any) => void, radioPlayer: any }) => {
+  const [localStations, setLocalStations] = useState<RadioStation[]>([]);
+  const [popularStations, setPopularStations] = useState<RadioStation[]>([]);
+  const [globalStations, setGlobalStations] = useState<RadioStation[]>([]);
 
-const POPULAR_NIGERIA = [
-  { id: '5', name: 'Agidigbo', freq: '88.7', colors: ['#434343', '#000000'] as [string, string], barColors: ['#FF5F6D', '#FFC371'] },
-  { id: '6', name: 'Fresh', freq: '105.9', colors: ['#434343', '#000000'] as [string, string], barColors: ['#ece9e6', '#ffffff'] },
-  { id: '7', name: 'Lagelu', freq: '96.7', colors: ['#434343', '#000000'] as [string, string], barColors: ['#f857a6', '#ff5858'] },
-  { id: '8', name: 'Splash', freq: '105.5', colors: ['#434343', '#000000'] as [string, string], barColors: ['#f7971e', '#ffd200'] },
-];
+  useEffect(() => {
+    const loadStations = async () => {
+      const global = await getTopStations(4);
+      setGlobalStations(global);
+      const pop = await getPopularStations(4);
+      setPopularStations(pop);
+      const local = await getStationsByCountry('Nigeria', 4); // Default to Nigeria or detect location
+      setLocalStations(local);
+    };
+    loadStations();
+  }, []);
 
-const RadioHomeScreen = ({ onSearchPress, onStationClick }: { onSearchPress: () => void, onStationClick: (station: any) => void }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -81,24 +92,24 @@ const RadioHomeScreen = ({ onSearchPress, onStationClick }: { onSearchPress: () 
           />
         </TouchableOpacity>
 
-        <SectionHeader title="Stations in Lagos" />
+        <SectionHeader title="Top Stations Global" />
         <View style={styles.grid}>
-          {STATIONS_LAGOS.map((item) => (
-            <StationCard key={item.id} station={item} onPress={() => onStationClick(item)} />
+          {globalStations.map((item, index) => (
+            <StationCard key={item.stationuuid} station={item} index={index} onPress={() => onStationClick(item)} />
           ))}
         </View>
 
-        <SectionHeader title="Popular in Lagos" />
+        <SectionHeader title="Popular Right Now" />
         <View style={styles.grid}>
-          {POPULAR_LAGOS.map((item) => (
-            <StationCard key={item.id} station={item} onPress={() => onStationClick(item)} />
+          {popularStations.map((item, index) => (
+            <StationCard key={item.stationuuid} station={item} index={index} onPress={() => onStationClick(item)} />
           ))}
         </View>
 
         <SectionHeader title="Popular in Nigeria" />
         <View style={styles.grid}>
-          {POPULAR_NIGERIA.map((item) => (
-            <StationCard key={item.id} station={item} onPress={() => onStationClick(item)} />
+          {localStations.map((item, index) => (
+            <StationCard key={item.stationuuid} station={item} index={index} onPress={() => onStationClick(item)} />
           ))}
         </View>
 
@@ -106,33 +117,35 @@ const RadioHomeScreen = ({ onSearchPress, onStationClick }: { onSearchPress: () 
       </ScrollView>
 
       {/* Mini Player */}
-      <View style={styles.miniPlayer}>
-        <LinearGradient
-          colors={['#6A11CB', '#2575FC']}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={styles.miniPlayerGradient}
-        >
-          <View style={styles.playerInfo}>
-            <MaterialCommunityIcons name="waveform" size={24} color="#FFF" />
-            <View style={{ marginLeft: 10 }}>
-              <View style={styles.row}>
-                <Text style={styles.playingTitle}>Wazobia FM 95.1</Text>
-                <Ionicons name="arrow-forward-circle-outline" size={14} color="#FFF" style={{ marginLeft: 5 }} />
+      {radioPlayer.currentStation && (
+        <View style={styles.miniPlayer}>
+          <LinearGradient
+            colors={['#6A11CB', '#2575FC']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.miniPlayerGradient}
+          >
+            <View style={styles.playerInfo}>
+              <MaterialCommunityIcons name="waveform" size={24} color="#FFF" />
+              <View style={{ marginLeft: 10 }}>
+                <View style={styles.row}>
+                  <Text style={styles.playingTitle} numberOfLines={1}>{radioPlayer.currentStation.name}</Text>
+                  {radioPlayer.isLoading && <Ionicons name="sync" size={14} color="#FFF" style={{ marginLeft: 5 }} />}
+                </View>
+                <Text style={styles.playingSub} numberOfLines={1}>{radioPlayer.currentStation.country}</Text>
               </View>
-              <Text style={styles.playingSub}>Lagos, Nigeria</Text>
             </View>
-          </View>
-          <View style={styles.playerControls}>
-            <TouchableOpacity style={styles.playBtn}>
-              <Ionicons name="stop" size={20} color="#6A11CB" />
-            </TouchableOpacity>
-            <TouchableOpacity style={{ marginLeft: 15 }}>
-              <Ionicons name="play-skip-forward" size={24} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-      </View>
+            <View style={styles.playerControls}>
+              <TouchableOpacity style={styles.playBtn} onPress={radioPlayer.togglePlayPause}>
+                <Ionicons name={radioPlayer.isPlaying ? "stop" : "play"} size={20} color="#6A11CB" />
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginLeft: 15 }} onPress={radioPlayer.stop}>
+                <Ionicons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -147,12 +160,12 @@ const SectionHeader = ({ title }: { title: string }) => (
   </View>
 );
 
-const StationCard = ({ station, onPress }: { station: any, onPress?: () => void }) => (
+const StationCard = ({ station, index, onPress }: { station: RadioStation, index: number, onPress?: () => void }) => (
   <TouchableOpacity style={styles.card} onPress={onPress}>
-    <LinearGradient colors={station.colors} style={styles.cardGradient}>
+    <LinearGradient colors={getFallbackColors(index)} style={styles.cardGradient}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardFreq}>{station.freq}</Text>
-        <Text style={styles.cardName}>{station.name}</Text>
+        <Text style={styles.cardFreq} numberOfLines={1}>{station.tags?.split(',')[0] || station.countrycode || 'FM'}</Text>
+        <Text style={styles.cardName} numberOfLines={1}>{station.name}</Text>
       </View>
       <View style={styles.visualizer}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((i) => (
@@ -162,7 +175,7 @@ const StationCard = ({ station, onPress }: { station: any, onPress?: () => void 
               styles.vizBar,
               {
                 height: 10 + Math.random() * 20,
-                backgroundColor: station.barColors[i % 2],
+                backgroundColor: 'rgba(255,255,255,0.7)',
                 opacity: 0.6 + Math.random() * 0.4,
               },
             ]}

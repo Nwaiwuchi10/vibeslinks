@@ -113,4 +113,38 @@ export const liveStreamService = {
     store.dispatch(showToast({ type: 'success', message: 'Live stream deleted.' }));
     return response.data;
   },
+
+  // ─── TikTok LIVE Features ──────────────────────────────────────────────────
+
+  async getGiftCatalog() {
+    return (await apiClient.get('/live-streams/gifts/catalog')).data;
+  },
+
+  async sendGift(id: string, giftId: string, count: number = 1) {
+    return (await apiClient.post(`/live-streams/${id}/gifts`, { giftId, count })).data;
+  },
+
+  async getTopGifters(id: string) {
+    return (await apiClient.get(`/live-streams/${id}/top-gifters`)).data;
+  },
+
+  async sendLikeBurst(id: string, count: number = 1) {
+    return (await apiClient.post(`/live-streams/${id}/likes-burst`, { count })).data;
+  },
+
+  async pinMessage(id: string, message: string) {
+    return (await apiClient.post(`/live-streams/${id}/chat/pin`, { message })).data;
+  },
+
+  async startPkBattle(id: string, opponentId: string, durationSeconds: number = 180) {
+    return (await apiClient.post(`/live-streams/${id}/pk/start`, { opponentId, durationSeconds })).data;
+  },
+
+  async updatePkScore(id: string, battleId: string, hostId: string, points: number = 1) {
+    return (await apiClient.post(`/live-streams/${id}/pk/score`, { battleId, hostId, points })).data;
+  },
+
+  async endPkBattle(id: string, battleId: string) {
+    return (await apiClient.post(`/live-streams/${id}/pk/end`, { battleId })).data;
+  },
 };

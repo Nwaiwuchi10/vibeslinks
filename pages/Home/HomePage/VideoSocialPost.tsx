@@ -4,8 +4,12 @@ import { postService } from '@/services/postService';
 import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import { router } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, Modal, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { useAppSelector } from '@/store/hooks';
+import { navigateToUserProfile } from '@/utils/profileNavigation';
 
 import UserAvatar from '@/components/UserAvatar';
 
@@ -14,11 +18,23 @@ interface VideoSocialPostProps {
 }
 
 export default function VideoSocialPost({ post }: VideoSocialPostProps) {
+    const currentUser = useAppSelector((state) => state.auth?.user);
+    const currentUserId = currentUser?.id || (currentUser as any)?._id;
     const videoRef = useRef<Video>(null);
+    const isScreenFocused = useIsFocused();
     const [showOptions, setShowOptions] = useState(false);
     const [showHideModal, setShowHideModal] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
+
+    // Stop and mute video playback whenever the screen loses focus (e.g. user goes to another page or tab)
+    useEffect(() => {
+        if (!isScreenFocused && videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+            videoRef.current.setIsMutedAsync(true).catch(() => {});
+            setIsPlaying(false);
+        }
+    }, [isScreenFocused]);
 
     const [likesCount, setLikesCount] = useState(post?.likesCount ?? post?.likes?.length ?? 0);
     const [hasLiked, setHasLiked] = useState(post?.myReaction === 'like' || post?.hasLiked === true);
@@ -91,11 +107,17 @@ export default function VideoSocialPost({ post }: VideoSocialPostProps) {
                 onPress={() => post?.id && router.push({ pathname: '/post-details', params: { id: post.id } })}
             >
                 <View style={styles.socialHeader}>
-                    <UserAvatar avatarUrl={avatarUrl} name={authorName} size={38} />
-                    <Text style={styles.socialName}>
-                        {authorName} <MaterialIcons name="verified" size={12} color={Colors.primary} />{' '}
-                        <Text style={styles.socialTime}>. {timeAgoText}</Text>
-                    </Text>
+                    <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                        activeOpacity={0.8}
+                        onPress={() => navigateToUserProfile(router, author, currentUserId)}
+                    >
+                        <UserAvatar avatarUrl={avatarUrl} name={authorName} size={38} />
+                        <Text style={styles.socialName} numberOfLines={1}>
+                            {authorName} {/* <MaterialIcons name="verified" size={12} color={Colors.primary} /> */}{' '}
+                            <Text style={styles.socialTime}>. {timeAgoText}</Text>
+                        </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={{ marginLeft: 'auto', padding: 4 }} onPress={handleOptionsPress}>
                         <MaterialCommunityIcons name="dots-horizontal" size={20} color="#333" />
                     </TouchableOpacity>

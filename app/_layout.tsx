@@ -16,6 +16,7 @@ import ToastContainer from '@/components/ui/Toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 import { notificationService } from '@/services/notificationService';
+import { locationService } from '@/services/locationService';
 import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'vibezlink_access_token';
@@ -60,6 +61,8 @@ function AppContent() {
       // Register device for push notifications
       const osPlatform = Platform.OS === 'ios' ? 'ios' : 'android';
       notificationService.registerDevice(`device-token-${user?.id || 'vibez'}`, osPlatform);
+      // Sync user location
+      locationService.syncDeviceLocation();
     } else {
       socketService.disconnect();
     }

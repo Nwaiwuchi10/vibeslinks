@@ -33,10 +33,11 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
-  // Real Google + Facebook OAuth hooks (login mode)
+  // Real Google, Facebook, and Apple OAuth hooks (login mode)
   const {
     promptGoogleSignIn,
     promptFacebookSignIn,
+    promptAppleSignIn,
     loading: ssoLoading,
   } = useSocialAuth({ mode: 'login' });
 
@@ -97,9 +98,7 @@ export default function LoginScreen() {
         <SocialButton
           iconType="apple"
           title="Continue with Apple"
-          onPress={() =>
-            dispatch(showToast({ type: 'info', message: 'Apple sign-in coming soon.' }))
-          }
+          onPress={promptAppleSignIn}
           disabled={isLoading}
         />
       </View>

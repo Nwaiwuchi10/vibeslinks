@@ -7,9 +7,9 @@ export type UserLike = {
   name?: string;
   fullName?: string;
   username?: string;
-  profilePictureUrl?: string;
-  avatarUrl?: string;
-  avatar?: string;
+  profilePictureUrl?: string | null;
+  avatarUrl?: string | null;
+  avatar?: string | null;
   role?: string;
   isHost?: boolean;
   type?: string;
@@ -18,7 +18,7 @@ export type UserLike = {
 /**
  * Navigates to a user's profile screen.
  * - If target is the logged-in user, navigates to your own profile tab `/(tabs)/profile`.
- * - If target is another user or host, navigates to `/host-profile` with user details.
+ * - If target is another user or host, navigates to `/host-profile` capturing all user & host information.
  */
 export function navigateToUserProfile(
   router: any,
@@ -40,17 +40,21 @@ export function navigateToUserProfile(
 
   if (!targetId) return;
 
+  // 1) Logged-in user: keep own profile screen intact
   if (currentUserId && (targetId === currentUserId || String(targetId) === String(currentUserId))) {
     router.push('/(tabs)/profile');
-  } else {
-    router.push({
-      pathname: '/host-profile',
-      params: {
-        id: targetId,
-        name: targetName,
-        avatar: targetAvatar,
-        role: targetUser.role || (targetUser.isHost ? 'host' : 'user'),
-      },
-    });
+    return;
   }
+
+  // 2) Single unified profile navigation for all other users and hosts
+  router.push({
+    pathname: '/host-profile',
+    params: {
+      id: targetId,
+      name: targetName,
+      avatar: targetAvatar,
+      username: targetUser.username || '',
+      role: targetUser.role || (targetUser.isHost ? 'host' : 'user'),
+    },
+  });
 }

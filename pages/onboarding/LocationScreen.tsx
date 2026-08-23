@@ -1,33 +1,103 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { useAppDispatch } from '@/store/hooks';
+import { showToast } from '@/store/slices/toastSlice';
+import { apiClient } from '@/services/apiClient';
 import { userService } from '@/services/userService';
 
 export default function LocationScreen() {
+  const dispatch = useAppDispatch();
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+
   const handleUseCurrentLocation = async () => {
+    if (isDetectingLocation) return;
+    setIsDetectingLocation(true);
+
     try {
-      await userService.updateProfile({
-        contactDetails: {
-          location: 'Lagos, Nigeria',
-        },
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        dispatch(
+          showToast({
+            type: 'warning',
+            message: 'Location permission is required to detect your location. Please grant permission or enter your location manually.',
+          })
+        );
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
       });
+
+      const { latitude, longitude } = position.coords;
+
+      // 1. Reverse geocode to resolve city, region, and country name
+      let resolvedAddress = '';
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (geo) {
+          const parts = [
+            geo.city || geo.subregion || geo.district,
+            geo.region,
+            geo.country,
+          ].filter(Boolean);
+          resolvedAddress = parts.join(', ');
+        }
+      } catch (geoErr) {
+        console.warn('[LocationScreen] Reverse geocoding failed:', geoErr);
+      }
+
+      // 2. Sync GPS coordinates with backend for 20km event filtering
+      try {
+        await apiClient.patch('/users/me/location', {
+          latitude,
+          longitude,
+        });
+      } catch (patchErr) {
+        console.warn('[LocationScreen] Location coordinate sync failed:', patchErr);
+      }
+
+      // 3. Update user profile contactDetails if resolved address exists
+      if (resolvedAddress) {
+        try {
+          await userService.updateProfile({
+            contactDetails: {
+              location: resolvedAddress,
+            },
+          });
+        } catch (profileErr) {
+          console.warn('[LocationScreen] Profile location update failed:', profileErr);
+        }
+      }
+
       router.push('/(onboarding)/location-confirmed' as any);
-    } catch (err) {
-      // apiClient handles toasts
+    } catch (err: any) {
+      console.error('[LocationScreen] Location detection error:', err);
+      dispatch(
+        showToast({
+          type: 'error',
+          message: err?.message || 'Failed to detect current location. Please enter manually.',
+        })
+      );
+    } finally {
+      setIsDetectingLocation(false);
     }
   };
 
   const handleSkip = () => {
-    router.push('/(onboarding)/location-confirmed' as any);
+    router.replace('/(tabs)');
   };
 
   return (
@@ -53,22 +123,31 @@ export default function LocationScreen() {
           </View>
         </View>
 
-        <Text style={styles.title}>What isYour location?</Text>
+        <Text style={styles.title}>What is your location?</Text>
         <Text style={styles.subtitle}>Find events happening near you.</Text>
 
         <View style={styles.buttonsContainer}>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[styles.primaryButton, isDetectingLocation && { opacity: 0.8 }]}
             activeOpacity={0.88}
             onPress={handleUseCurrentLocation}
+            disabled={isDetectingLocation}
           >
-            <Text style={styles.primaryButtonText}>Use My Currently Location</Text>
+            {isDetectingLocation ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ActivityIndicator color="#FFF" size="small" />
+                <Text style={styles.primaryButtonText}>Detecting Location...</Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryButtonText}>Use My Current Location</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.secondaryButton}
             activeOpacity={0.88}
             onPress={() => router.push('/(onboarding)/enter-location' as any)}
+            disabled={isDetectingLocation}
           >
             <Text style={styles.secondaryButtonText}>Enter Location Manually</Text>
           </TouchableOpacity>
@@ -78,6 +157,7 @@ export default function LocationScreen() {
           style={styles.skipContainer}
           activeOpacity={0.8}
           onPress={handleSkip}
+          disabled={isDetectingLocation}
         >
           <Text style={styles.skipText}>Skip For Now</Text>
         </TouchableOpacity>

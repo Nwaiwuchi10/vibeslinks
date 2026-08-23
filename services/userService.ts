@@ -118,6 +118,10 @@ export const userService = {
     return response.data;
   },
 
+  async followHost(hostId: string) {
+    return (await apiClient.patch(`/users/${hostId}/follow`)).data;
+  },
+
   async followArtist(artistId: string) {
     return (await apiClient.patch(`/users/${artistId}/follow`)).data;
   },

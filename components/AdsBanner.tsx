@@ -65,7 +65,7 @@ const AdsBanner = ({ refreshKey, paddingHorizontal = 20 }: AdsBannerProps) => {
           <View style={styles.adBottomRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={styles.adTitle}>{title}</Text>
-              <MaterialIcons name="verified" size={14} color="#FFF" style={{ marginLeft: 4 }} />
+              {/* <MaterialIcons name="verified" size={14} color="#FFF" style={{ marginLeft: 4 }} /> */}
             </View>
           </View>
         </View>

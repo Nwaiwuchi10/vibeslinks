@@ -7,6 +7,7 @@ import { ResizeMode, Video } from 'expo-av';
 import { Image as ExpoImage } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -41,6 +42,13 @@ function isVideoUrl(url?: string | null): boolean {
     return /\.(mp4|mov|avi|webm|mkv|m4v|3gp)(\?.*)?$/i.test(url);
 }
 
+function postHasVideo(post: any): boolean {
+    if (isVideoUrl(post.videoUrl)) return true;
+    if (isVideoUrl(post.mediaUrl)) return true;
+    if (post.mediaUrls && post.mediaUrls.some(isVideoUrl)) return true;
+    return false;
+}
+
 function timeAgo(dateStr?: string): string {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -54,16 +62,20 @@ function timeAgo(dateStr?: string): string {
 
 function FullScreenVideo({ uri, isActive }: { uri: string; isActive: boolean }) {
     const ref = useRef<Video>(null);
+    const isScreenFocused = useIsFocused();
     const [isMuted, setIsMuted] = useState(true);
+
+    const shouldPlay = isActive && isScreenFocused;
 
     useEffect(() => {
         if (!ref.current) return;
-        if (isActive) {
+        if (shouldPlay) {
             ref.current.playAsync().catch(() => {});
         } else {
             ref.current.pauseAsync().catch(() => {});
+            ref.current.setIsMutedAsync(true).catch(() => {});
         }
-    }, [isActive]);
+    }, [shouldPlay]);
 
     return (
         <View style={StyleSheet.absoluteFill}>
@@ -277,10 +289,12 @@ export default function FullScreenFeedScreen() {
                         : Array.isArray((data as any)?.items)
                             ? (data as any).items
                             : [];
-                setPosts(items);
+                
+                const videoItems = items.filter(postHasVideo);
+                setPosts(videoItems);
 
                 if (startId) {
-                    const idx = items.findIndex(p => p.id === startId);
+                    const idx = videoItems.findIndex(p => p.id === startId);
                     if (idx >= 0) setActiveIndex(idx);
                 }
             } catch (err) {

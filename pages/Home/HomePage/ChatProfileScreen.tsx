@@ -27,7 +27,7 @@ export default function ChatProfileScreen() {
     const activeThread = threads.find((t: any) => String(t.id || t._id) === String(conversationId));
     
     // Map actual participants from the active thread dynamically
-    const members = (activeThread?.participants || []).map((p: any, idx: number) => ({
+    const members: Array<{ id: string; name: string; image: string }> = (activeThread?.participants || []).map((p: any, idx: number) => ({
         id: p.id || p._id || p.userId || String(idx),
         name: p.name || p.fullName || p.username || 'Member',
         image: p.profilePictureUrl || p.avatarUrl || `https://i.pravatar.cc/150?img=${idx + 10}`,
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     cancelBtnText: { color: '#333', fontWeight: '700' },
     shareOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
     shareDismiss: { flex: 1 },
-    shareContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, pb: 40 },
+    shareContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
     dragIndicator: { width: 40, height: 4, backgroundColor: '#DDD', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
     shareSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
     shareSearchBox: { flex: 1, backgroundColor: '#F5F5F5', height: 46, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15 },

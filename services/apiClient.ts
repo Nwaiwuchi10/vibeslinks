@@ -14,8 +14,27 @@ declare module 'axios' {
 }
 
 
-// const BASE_URL = "http://192.168.0.106:3000"
-const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
+// App-wide configuration & credentials (accessible directly in native mobile builds)
+export const APP_CONFIG = {
+  GOOGLE_MAPS_GEOCODING_API_KEY: 'AIzaSyA95so4_aRUnfubUl3hzLmNkwkMkmNPZH4',
+  EXPO_PUBLIC_GOOGLE_MAPS_GEOCODING_API_KEY: 'AIzaSyA95so4_aRUnfubUl3hzLmNkwkMkmNPZH4',
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: '916119380843-e665r7bpkl725euhq7a7mttndndihujb.apps.googleusercontent.com',
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: '916119380843-e665r7bpkl725euhq7a7mttndndihujb.apps.googleusercontent.com',
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: '916119380843-e665r7bpkl725euhq7a7mttndndihujb.apps.googleusercontent.com',
+  EXPO_PUBLIC_FACEBOOK_APP_ID: '1560789862368581',
+  EXPO_PUBLIC_APPLE_SERVICE_ID: 'com.nwaiwuchi10.vibeslinks',
+};
+
+export const GOOGLE_MAPS_GEOCODING_API_KEY = APP_CONFIG.GOOGLE_MAPS_GEOCODING_API_KEY;
+export const EXPO_PUBLIC_GOOGLE_MAPS_GEOCODING_API_KEY = APP_CONFIG.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODING_API_KEY;
+export const EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = APP_CONFIG.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+export const EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = APP_CONFIG.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+export const EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID = APP_CONFIG.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+export const EXPO_PUBLIC_FACEBOOK_APP_ID = APP_CONFIG.EXPO_PUBLIC_FACEBOOK_APP_ID;
+export const EXPO_PUBLIC_APPLE_SERVICE_ID = APP_CONFIG.EXPO_PUBLIC_APPLE_SERVICE_ID;
+
+const BASE_URL = "http://192.168.0.106:3000"
+// const BASE_URL = 'https://vibezlink-app-on-god-backend-production.up.railway.app';
 const TOKEN_KEY = 'vibezlink_access_token';
 
 export const apiClient = axios.create({
@@ -138,23 +157,39 @@ apiClient.interceptors.response.use(
 );
 
 export const resolveImageUrl = (url?: string | null) => {
-  if (!url) return null;
-  // Replace backend dev localhost/127.0.0.1 URLs with remote BASE_URL for Android device access
+  if (!url || typeof url !== 'string' || url.trim().length === 0) return null;
+  url = url.trim();
+
+  // If already data or local file uri
+  if (url.startsWith('data:') || url.startsWith('file://')) {
+    return url;
+  }
+
+  // Replace backend dev localhost/127.0.0.1 URLs with remote BASE_URL for Android/iOS device access
   if (url.includes('localhost:') || url.includes('127.0.0.1:')) {
     const relativePath = url.replace(/^https?:\/\/[^\/]+/, '');
     return relativePath.startsWith('/') ? `${BASE_URL}${relativePath}` : `${BASE_URL}/${relativePath}`;
   }
-  // Standardize http:// URLs to https:// if pointing to remote backend or Cloudinary
-  if (url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
-    url = url.replace('http://', 'https://');
-  }
-  if (
-    url.startsWith('http://') ||
-    url.startsWith('https://') ||
-    url.startsWith('file://') ||
-    url.startsWith('data:')
-  ) {
+
+  // If already absolute https URL
+  if (url.startsWith('https://')) {
     return url;
   }
+
+  // If http:// URL (preserve local LAN IPs like 192.168.x.x or custom ports)
+  if (url.startsWith('http://')) {
+    const isLocalDevIp =
+      url.includes('192.168.') ||
+      url.includes('10.0.') ||
+      url.includes('172.') ||
+      url.includes(':3000') ||
+      url.includes(':8080');
+    if (!isLocalDevIp) {
+      return url.replace('http://', 'https://');
+    }
+    return url;
+  }
+
+  // Relative path like /uploads/profile-pictures/user.png
   return url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/${url}`;
 };

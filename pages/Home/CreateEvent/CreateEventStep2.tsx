@@ -4,7 +4,7 @@ import { store } from '@/store';
 import { showToast } from '@/store/slices/toastSlice';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -20,12 +20,33 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCreateEvent } from './CreateEventContext';
+import { useCreateEvent, FeaturedArtistState } from './CreateEventContext';
 
 const { width } = Dimensions.get('window');
 
-const CATEGORIES = ['club', 'concert', 'conference', 'festival', 'workshop', 'other'];
-const TIMEZONES = ['Africa/Lagos', 'UTC', 'GMT+1', 'EST', 'PST'];
+const DEFAULT_CATEGORIES = [
+  { value: 'nightlife', label: 'Nightlife' },
+  { value: 'club', label: 'Club' },
+  { value: 'concert', label: 'Concert' },
+  { value: 'conference', label: 'Conference' },
+  { value: 'festival', label: 'Festival' },
+  { value: 'workshop', label: 'Workshop' },
+  { value: 'other', label: 'Other' },
+];
+
+const POPULAR_TIMEZONES = [
+  'Africa/Lagos',
+  'Africa/Accra',
+  'Africa/Johannesburg',
+  'Africa/Nairobi',
+  'Africa/Cairo',
+  'Europe/London',
+  'Europe/Paris',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Asia/Dubai',
+  'UTC',
+];
 
 interface ArtistOption {
   id: string;
@@ -45,7 +66,7 @@ const CreateEventStep2 = ({
 }) => {
   const insets = useSafeAreaInsets();
   const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 16) : insets.bottom;
-  const { eventData, updateEventData } = useCreateEvent();
+  const { eventData, updateEventData, options } = useCreateEvent();
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showTimezoneDropdown, setShowTimezoneDropdown] = useState(false);
   const [showArtistSelector, setShowArtistSelector] = useState(false);
@@ -53,6 +74,7 @@ const CreateEventStep2 = ({
 
   const [availableArtists, setAvailableArtists] = useState<ArtistOption[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [timezoneSearch, setTimezoneSearch] = useState('');
   const [customCoverUrl, setCustomCoverUrl] = useState(eventData.imageUrl);
   const [showPresetsModal, setShowPresetsModal] = useState(false);
 
@@ -62,6 +84,33 @@ const CreateEventStep2 = ({
   const [customArtistName, setCustomArtistName] = useState('');
   const [customArtistAvatar, setCustomArtistAvatar] = useState('');
   const [uploadingArtistPic, setUploadingArtistPic] = useState(false);
+
+  // Categories from backend options or fallback
+  const categoriesList = useMemo(() => {
+    if (options?.categoryOptions && options.categoryOptions.length > 0) {
+      return options.categoryOptions;
+    }
+    if (options?.categories && options.categories.length > 0) {
+      return options.categories.map((c) => ({
+        value: c,
+        label: c.charAt(0).toUpperCase() + c.slice(1).replace(/_/g, ' '),
+      }));
+    }
+    return DEFAULT_CATEGORIES;
+  }, [options]);
+
+  // Timezones from backend options or fallback
+  const allTimezones = useMemo(() => {
+    const backendTzs = options?.timezones || [];
+    return Array.from(new Set([...POPULAR_TIMEZONES, ...backendTzs]));
+  }, [options]);
+
+  const filteredTimezones = useMemo(() => {
+    if (!timezoneSearch.trim()) return allTimezones;
+    return allTimezones.filter((tz) =>
+      tz.toLowerCase().includes(timezoneSearch.trim().toLowerCase())
+    );
+  }, [allTimezones, timezoneSearch]);
 
   const handlePickArtistImage = async (useCamera = false) => {
     try {
@@ -159,24 +208,39 @@ const CreateEventStep2 = ({
   };
 
   useEffect(() => {
-    async function fetchArtists() {
-      try {
-        const res = await eventService.getArtistOptions();
-        const list = Array.isArray(res) ? res : res.artists || [];
-        setAvailableArtists(list.map((a: any) => {
-          const rawUrl = a.avatarUrl || a.profilePictureUrl || null;
+    if (options?.artists && options.artists.length > 0) {
+      setAvailableArtists(
+        options.artists.map((a: any) => {
+          const rawUrl = a.profilePictureUrl || a.avatarUrl || null;
           return {
             id: a.id || String(a.userId || a._id),
             name: a.name || a.fullName || a.username || 'Artist',
             avatarUrl: resolveImageUrl(rawUrl) || 'https://i.pravatar.cc/150?img=12',
           };
-        }));
-      } catch (err) {
-        console.warn('[CreateEventStep2] Failed to fetch artist options:', err);
+        })
+      );
+    } else {
+      async function fetchArtists() {
+        try {
+          const res = await eventService.getArtistOptions();
+          const list = Array.isArray(res) ? res : res.artists || [];
+          setAvailableArtists(
+            list.map((a: any) => {
+              const rawUrl = a.avatarUrl || a.profilePictureUrl || null;
+              return {
+                id: a.id || String(a.userId || a._id),
+                name: a.name || a.fullName || a.username || 'Artist',
+                avatarUrl: resolveImageUrl(rawUrl) || 'https://i.pravatar.cc/150?img=12',
+              };
+            })
+          );
+        } catch (err) {
+          console.warn('[CreateEventStep2] Failed to fetch artist options:', err);
+        }
       }
+      fetchArtists();
     }
-    fetchArtists();
-  }, []);
+  }, [options]);
 
   const formatDate = (isoStr: string) => {
     if (!isoStr) return 'Select Date';
@@ -187,28 +251,37 @@ const CreateEventStep2 = ({
   const handleToggleArtist = (artistId: string) => {
     const currentIds = eventData.artisteIds || [];
     if (currentIds.includes(artistId)) {
-      updateEventData({ artisteIds: currentIds.filter(id => id !== artistId) });
+      updateEventData({ artisteIds: currentIds.filter((id) => id !== artistId) });
     } else {
       updateEventData({ artisteIds: [...currentIds, artistId] });
     }
   };
 
-  const getSelectedArtists = () => {
-    const ids = eventData.artisteIds || [];
-    return availableArtists.filter(a => ids.includes(a.id));
+  const handleRemoveCustomArtist = (artistId?: string, artistName?: string) => {
+    const currentCustom = eventData.featuredArtists || [];
+    updateEventData({
+      featuredArtists: currentCustom.filter((a) =>
+        artistId ? a.id !== artistId : a.name !== artistName
+      ),
+    });
   };
 
-  const filteredArtists = availableArtists.filter(a =>
+  const getSelectedRegisteredArtists = () => {
+    const ids = eventData.artisteIds || [];
+    return availableArtists.filter((a) => ids.includes(a.id));
+  };
+
+  const filteredArtists = availableArtists.filter((a) =>
     a.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const PRESET_COVERS = [
-    '',
+    'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800',
     'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800',
     'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
-    '',
+    'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=800',
     'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
-    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800'
+    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
   ];
 
   const handleAddRandomCover = () => {
@@ -217,7 +290,18 @@ const CreateEventStep2 = ({
     setCustomCoverUrl(chosen);
   };
 
-  const isFormValid = eventData.title.trim() && eventData.startsAt && eventData.venue.trim() && eventData.location.trim() && eventData.imageUrl;
+  const isFormValid = Boolean(
+    eventData.title.trim() &&
+      eventData.startsAt &&
+      eventData.venue.trim() &&
+      (eventData.location.trim() || eventData.venue.trim()) &&
+      eventData.imageUrl
+  );
+
+  const selectedCategoryLabel = useMemo(() => {
+    const match = categoriesList.find((c) => c.value === eventData.category);
+    return match ? match.label : eventData.category ? eventData.category.toUpperCase() : 'Select Category';
+  }, [categoriesList, eventData.category]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -230,7 +314,9 @@ const CreateEventStep2 = ({
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Title */}
-        <Text style={styles.label}>Event Title <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>
+          Event Title <Text style={styles.required}>*</Text>
+        </Text>
         <TextInput
           placeholder="e.g. Burna Boy Live in Lagos"
           style={styles.input}
@@ -257,7 +343,7 @@ const CreateEventStep2 = ({
           onPress={() => setShowCategoryDropdown(true)}
         >
           <Text style={[styles.dropdownText, eventData.category && { color: '#333' }]}>
-            {eventData.category ? eventData.category.toUpperCase() : 'Category'}
+            {selectedCategoryLabel}
           </Text>
           <Ionicons name="chevron-down" size={18} color="#999" />
         </TouchableOpacity>
@@ -287,25 +373,52 @@ const CreateEventStep2 = ({
             </TouchableOpacity>
           </View>
 
-          {getSelectedArtists().length > 0 ? (
+          {getSelectedRegisteredArtists().length > 0 || (eventData.featuredArtists && eventData.featuredArtists.length > 0) ? (
             <View style={styles.selectedArtistsRow}>
-              {getSelectedArtists().map(artist => (
+              {/* Registered platform artists */}
+              {getSelectedRegisteredArtists().map((artist) => (
                 <View key={artist.id} style={styles.artistChip}>
                   <Image source={{ uri: artist.avatarUrl }} style={styles.chipAvatar} />
-                  <Text style={styles.chipName} numberOfLines={1}>{artist.name}</Text>
+                  <Text style={styles.chipName} numberOfLines={1}>
+                    {artist.name}
+                  </Text>
                   <TouchableOpacity onPress={() => handleToggleArtist(artist.id)}>
+                    <Ionicons name="close-circle" size={16} color="#8E2DE2" style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {/* Custom featured artists */}
+              {(eventData.featuredArtists || []).map((artist, idx) => (
+                <View key={artist.id || `custom_${idx}`} style={[styles.artistChip, styles.customArtistChip]}>
+                  {artist.imageUrl || artist.profilePictureUrl ? (
+                    <Image
+                      source={{ uri: artist.imageUrl || artist.profilePictureUrl }}
+                      style={styles.chipAvatar}
+                    />
+                  ) : (
+                    <View style={[styles.chipAvatar, styles.placeholderAvatar]}>
+                      <Ionicons name="person" size={12} color="#8E2DE2" />
+                    </View>
+                  )}
+                  <Text style={styles.chipName} numberOfLines={1}>
+                    {artist.name} (Guest)
+                  </Text>
+                  <TouchableOpacity onPress={() => handleRemoveCustomArtist(artist.id, artist.name)}>
                     <Ionicons name="close-circle" size={16} color="#8E2DE2" style={{ marginLeft: 4 }} />
                   </TouchableOpacity>
                 </View>
               ))}
             </View>
           ) : (
-            <Text style={styles.noArtistsText}>No featured artists selected.</Text>
+            <Text style={styles.noArtistsText}>No featured artists selected. Tap Manage Artists to select or add.</Text>
           )}
         </View>
 
         {/* Time and Date */}
-        <Text style={styles.label}>Time & Date <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>
+          Time & Date <Text style={styles.required}>*</Text>
+        </Text>
         <View style={styles.timeRow}>
           <TouchableOpacity style={styles.timeItem} onPress={onOpenDatePicker}>
             <Text style={styles.timeLabel}>Start time</Text>
@@ -328,13 +441,15 @@ const CreateEventStep2 = ({
           onPress={() => setShowTimezoneDropdown(true)}
         >
           <Text style={[styles.dropdownText, eventData.timezone && { color: '#333' }]}>
-            {eventData.timezone || 'Select timezone...'}
+            {eventData.timezone || 'Africa/Lagos'}
           </Text>
           <Ionicons name="chevron-down" size={18} color="#999" />
         </TouchableOpacity>
 
         {/* Cover Image */}
-        <Text style={styles.label}>Event Cover Image <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>
+          Event Cover Image <Text style={styles.required}>*</Text>
+        </Text>
 
         {eventData.imageUrl ? (
           <View style={styles.coverPreviewContainer}>
@@ -361,26 +476,68 @@ const CreateEventStep2 = ({
         <View style={styles.venueSection}>
           <Text style={styles.sectionLabel}>Venue Details</Text>
 
-          <Text style={styles.label}>Venue Name <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.label}>
+            Venue Name <Text style={styles.required}>*</Text>
+          </Text>
           <TextInput
             placeholder="e.g. Eko Hotel Convention Centre"
             style={styles.whiteInput}
             placeholderTextColor="#999"
             value={eventData.venue}
-            onChangeText={(text) => updateEventData({ venue: text })}
+            onChangeText={(text) => {
+              updateEventData({
+                venue: text,
+                venueLocation: { ...eventData.venueLocation, name: text },
+              });
+            }}
           />
 
-          <Text style={styles.label}>Address / Location <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.label}>
+            Address / Location <Text style={styles.required}>*</Text>
+          </Text>
+          <TextInput
+            placeholder="e.g. 1415 Adetokunbo Ademola Street"
+            style={styles.whiteInput}
+            placeholderTextColor="#999"
+            value={eventData.location}
+            onChangeText={(text) => {
+              updateEventData({
+                location: text,
+                venueLocation: { ...eventData.venueLocation, address: text },
+              });
+            }}
+          />
+
+          <Text style={styles.label}>City</Text>
           <TextInput
             placeholder="e.g. Victoria Island, Lagos"
             style={styles.whiteInput}
             placeholderTextColor="#999"
-            value={eventData.location}
-            onChangeText={(text) => updateEventData({ location: text })}
+            value={eventData.city}
+            onChangeText={(text) => {
+              updateEventData({
+                city: text,
+                venueLocation: { ...eventData.venueLocation, city: text },
+              });
+            }}
+          />
+
+          <Text style={styles.label}>Country</Text>
+          <TextInput
+            placeholder="e.g. Nigeria"
+            style={styles.whiteInput}
+            placeholderTextColor="#999"
+            value={eventData.country}
+            onChangeText={(text) => {
+              updateEventData({
+                country: text,
+                venueLocation: { ...eventData.venueLocation, country: text },
+              });
+            }}
           />
 
           <View style={styles.capacityRow}>
-            <Text style={styles.capacityLabel}>Venue capacity</Text>
+            <Text style={styles.capacityLabel}>Total Venue Capacity</Text>
             <TextInput
               placeholder="e.g. 5000"
               style={styles.capacityInput}
@@ -413,19 +570,19 @@ const CreateEventStep2 = ({
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Select Category</Text>
             <ScrollView>
-              {CATEGORIES.map((cat) => (
+              {categoriesList.map((cat) => (
                 <TouchableOpacity
-                  key={cat}
-                  style={[styles.modalOption, eventData.category === cat && styles.modalOptionSelected]}
+                  key={cat.value}
+                  style={[styles.modalOption, eventData.category === cat.value && styles.modalOptionSelected]}
                   onPress={() => {
-                    updateEventData({ category: cat });
+                    updateEventData({ category: cat.value });
                     setShowCategoryDropdown(false);
                   }}
                 >
-                  <Text style={[styles.modalOptionText, eventData.category === cat && styles.modalOptionTextSelected]}>
-                    {cat.toUpperCase()}
+                  <Text style={[styles.modalOptionText, eventData.category === cat.value && styles.modalOptionTextSelected]}>
+                    {cat.label}
                   </Text>
-                  {eventData.category === cat && <Ionicons name="checkmark-circle" size={20} color="#8E2DE2" />}
+                  {eventData.category === cat.value && <Ionicons name="checkmark-circle" size={20} color="#8E2DE2" />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -436,17 +593,28 @@ const CreateEventStep2 = ({
       {/* Timezone Modal */}
       <Modal visible={showTimezoneDropdown} transparent animationType="slide" onRequestClose={() => setShowTimezoneDropdown(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTimezoneDropdown(false)}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { maxHeight: '75%' }]}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Select Timezone</Text>
+            <View style={styles.searchBarWrapper}>
+              <Ionicons name="search-outline" size={18} color="#999" style={{ marginRight: 8 }} />
+              <TextInput
+                placeholder="Search timezone (e.g. Lagos, London, New_York)..."
+                style={styles.searchInput}
+                value={timezoneSearch}
+                onChangeText={setTimezoneSearch}
+                placeholderTextColor="#999"
+              />
+            </View>
             <ScrollView>
-              {TIMEZONES.map((tz) => (
+              {filteredTimezones.map((tz) => (
                 <TouchableOpacity
                   key={tz}
                   style={[styles.modalOption, eventData.timezone === tz && styles.modalOptionSelected]}
                   onPress={() => {
                     updateEventData({ timezone: tz });
                     setShowTimezoneDropdown(false);
+                    setTimezoneSearch('');
                   }}
                 >
                   <Text style={[styles.modalOptionText, eventData.timezone === tz && styles.modalOptionTextSelected]}>
@@ -469,16 +637,16 @@ const CreateEventStep2 = ({
               <Text style={styles.modalTitle}>Select Featured Artists</Text>
               <TouchableOpacity onPress={() => setShowCustomArtistForm(!showCustomArtistForm)}>
                 <Text style={{ color: '#8E2DE2', fontWeight: '700', fontSize: 13 }}>
-                  {showCustomArtistForm ? 'Back to List' : '+ Add Custom'}
+                  {showCustomArtistForm ? 'Back to List' : '+ Add Custom / Guest'}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {showCustomArtistForm ? (
               <ScrollView contentContainerStyle={{ padding: 20 }}>
-                <Text style={styles.label}>Artist Name</Text>
+                <Text style={styles.label}>Artist Name <Text style={styles.required}>*</Text></Text>
                 <TextInput
-                  placeholder="e.g. Wizkid"
+                  placeholder="e.g. Wizkid or Guest DJ"
                   style={styles.input}
                   placeholderTextColor="#999"
                   value={customArtistName}
@@ -529,14 +697,17 @@ const CreateEventStep2 = ({
                       store.dispatch(showToast({ type: 'warning', message: 'Artist name is required' }));
                       return;
                     }
-                    const newArtistId = `custom_${Date.now()}`;
-                    const newArtist: ArtistOption = {
-                      id: newArtistId,
+                    const newCustom: FeaturedArtistState = {
+                      id: `custom_${Date.now()}`,
                       name: customArtistName.trim(),
-                      avatarUrl: customArtistAvatar.trim() || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 50)}`,
+                      imageUrl: customArtistAvatar.trim() || undefined,
+                      profilePictureUrl: customArtistAvatar.trim() || undefined,
+                      isCustom: true,
                     };
-                    setAvailableArtists(prev => [newArtist, ...prev]);
-                    handleToggleArtist(newArtistId);
+                    updateEventData({
+                      featuredArtists: [...(eventData.featuredArtists || []), newCustom],
+                    });
+                    store.dispatch(showToast({ type: 'success', message: `Added ${newCustom.name}` }));
 
                     // Reset custom inputs
                     setCustomArtistName('');
@@ -544,7 +715,7 @@ const CreateEventStep2 = ({
                     setShowCustomArtistForm(false);
                   }}
                 >
-                  <Text style={[styles.addBtnText, { fontSize: 14 }]}>Add Artist to Event</Text>
+                  <Text style={[styles.addBtnText, { fontSize: 14 }]}>Add Guest Artist to Event</Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : (
@@ -552,7 +723,7 @@ const CreateEventStep2 = ({
                 <View style={styles.searchBarWrapper}>
                   <Ionicons name="search-outline" size={18} color="#999" style={{ marginRight: 8 }} />
                   <TextInput
-                    placeholder="Search artists..."
+                    placeholder="Search platform artists..."
                     style={styles.searchInput}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -581,7 +752,7 @@ const CreateEventStep2 = ({
                     );
                   }}
                   ListEmptyComponent={
-                    <Text style={styles.emptyArtistsText}>No artists found. Add a custom artist above.</Text>
+                    <Text style={styles.emptyArtistsText}>No registered artists found. Add a custom/guest artist above.</Text>
                   }
                 />
               </>
@@ -596,6 +767,7 @@ const CreateEventStep2 = ({
           </View>
         </View>
       </Modal>
+
       {/* Image Source Picker Modal */}
       <Modal visible={showImageSourcePicker} transparent animationType="slide" onRequestClose={() => setShowImageSourcePicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowImageSourcePicker(false)}>
@@ -679,8 +851,10 @@ const styles = StyleSheet.create({
   noArtistsText: { color: '#999', fontSize: 13, fontStyle: 'italic' },
   selectedArtistsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   artistChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: '#EFEFEF' },
+  customArtistChip: { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' },
   chipAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: 6 },
-  chipName: { fontSize: 12, color: '#333', fontWeight: '600', maxWidth: 80 },
+  placeholderAvatar: { backgroundColor: '#E9D5FF', justifyContent: 'center', alignItems: 'center' },
+  chipName: { fontSize: 12, color: '#333', fontWeight: '600', maxWidth: 100 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   timeItem: { width: '48%', height: 60, backgroundColor: '#FFF', borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15, borderWidth: 1, borderColor: '#EEE' },
   timeLabel: { color: '#999', fontSize: 11, fontWeight: '600', marginBottom: 4 },
@@ -689,10 +863,10 @@ const styles = StyleSheet.create({
   randomCoverBtnText: { fontSize: 13, color: '#8E2DE2', fontWeight: '700' },
   venueSection: { backgroundColor: '#FFF', borderRadius: 20, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#EFEFEF' },
   sectionLabel: { fontSize: 15, fontWeight: '800', color: '#333', marginBottom: 16 },
-  whiteInput: { backgroundColor: '#FAFAFA', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 12, justifyContent: 'center', borderWidth: 1, borderColor: '#EFEFEF' },
+  whiteInput: { backgroundColor: '#FAFAFA', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 12, justifyContent: 'center', borderWidth: 1, borderColor: '#EFEFEF', color: '#333' },
   capacityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   capacityLabel: { fontSize: 14, fontWeight: '700', color: '#555' },
-  capacityInput: { backgroundColor: '#FAFAFA', width: '50%', height: 50, borderRadius: 12, paddingHorizontal: 15, borderWidth: 1, borderColor: '#EFEFEF', textAlign: 'right' },
+  capacityInput: { backgroundColor: '#FAFAFA', width: '50%', height: 50, borderRadius: 12, paddingHorizontal: 15, borderWidth: 1, borderColor: '#EFEFEF', textAlign: 'right', color: '#333' },
   footer: { paddingHorizontal: 20, paddingBottom: 30, paddingTop: 10, backgroundColor: '#FAFAFA' },
   continueBtn: { backgroundColor: '#7F36FF', height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 2 },
   continueBtnDisabled: { opacity: 0.5 },

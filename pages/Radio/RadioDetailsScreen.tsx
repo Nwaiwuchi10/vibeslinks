@@ -22,7 +22,24 @@ const FAVORITE_STATIONS = [
   { id: '4', name: 'Splash', freq: '105.5', colors: ['#232526', '#414345'] as [string, string], barColors: ['#f7971e', '#ffd200'] },
 ];
 
-const RadioDetailsScreen = ({ station, onBack }: { station: any, onBack: () => void }) => {
+const RadioDetailsScreen = ({ onBack, radioPlayer }: { onBack: () => void, radioPlayer: any }) => {
+  const station = radioPlayer.currentStation;
+
+  if (!station) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backLink}>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#FFF' }}>No station selected</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header Search */}
@@ -51,14 +68,13 @@ const RadioDetailsScreen = ({ station, onBack }: { station: any, onBack: () => v
               <Ionicons name="chevron-back" size={20} color="#FFF" />
             </TouchableOpacity>
             <View style={styles.freqDisplay}>
-              <Text style={styles.freqPrefix}>0</Text>
-              <Text style={styles.freqNumber}>{station.freq}</Text>
+              <Text style={styles.freqNumber} numberOfLines={1}>{station.tags?.split(',')[0] || station.countrycode || 'FM'}</Text>
             </View>
             <TouchableOpacity style={styles.navBtn}>
               <Ionicons name="chevron-forward" size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.stationName}>{station.name}</Text>
+          <Text style={styles.stationName} numberOfLines={1}>{station.name}</Text>
         </View>
 
         {/* Large Visualizer/Slider */}
@@ -71,7 +87,7 @@ const RadioDetailsScreen = ({ station, onBack }: { station: any, onBack: () => v
                   styles.vizBar, 
                   { 
                     height: 20 + Math.random() * 60,
-                    opacity: i === 20 ? 1 : 0.4,
+                    opacity: radioPlayer.isPlaying ? (i === 20 ? 1 : 0.4) : 0.2,
                     width: i === 20 ? 4 : 2,
                     backgroundColor: i === 20 ? '#8E2DE2' : '#FFF',
                   }
@@ -82,6 +98,19 @@ const RadioDetailsScreen = ({ station, onBack }: { station: any, onBack: () => v
           <View style={styles.sliderTrack}>
              <View style={styles.sliderThumb} />
           </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 40 }}>
+          <TouchableOpacity 
+            style={{ backgroundColor: '#8E2DE2', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center' }}
+            onPress={radioPlayer.togglePlayPause}
+          >
+            {radioPlayer.isLoading ? (
+              <Ionicons name="sync" size={32} color="#FFF" />
+            ) : (
+              <Ionicons name={radioPlayer.isPlaying ? "stop" : "play"} size={32} color="#FFF" />
+            )}
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Favorite Stations</Text>
@@ -128,18 +157,18 @@ const RadioDetailsScreen = ({ station, onBack }: { station: any, onBack: () => v
             <MaterialCommunityIcons name="waveform" size={24} color="#FFF" />
             <View style={{ marginLeft: 10 }}>
               <View style={styles.row}>
-                <Text style={styles.playingTitle}>{station.name} {station.freq}</Text>
-                <Ionicons name="arrow-forward-circle-outline" size={14} color="#FFF" style={{ marginLeft: 5 }} />
+                <Text style={styles.playingTitle} numberOfLines={1}>{station.name}</Text>
+                {radioPlayer.isLoading && <Ionicons name="sync" size={14} color="#FFF" style={{ marginLeft: 5 }} />}
               </View>
-              <Text style={styles.playingSub}>Lagos, Nigeria</Text>
+              <Text style={styles.playingSub} numberOfLines={1}>{station.country}</Text>
             </View>
           </View>
           <View style={styles.playerControls}>
-            <TouchableOpacity style={styles.playBtn}>
-              <Ionicons name="stop" size={20} color="#6A11CB" />
+            <TouchableOpacity style={styles.playBtn} onPress={radioPlayer.togglePlayPause}>
+              <Ionicons name={radioPlayer.isPlaying ? "stop" : "play"} size={20} color="#6A11CB" />
             </TouchableOpacity>
-            <TouchableOpacity style={{ marginLeft: 15 }}>
-              <Ionicons name="play-skip-forward" size={24} color="#FFF" />
+            <TouchableOpacity style={{ marginLeft: 15 }} onPress={radioPlayer.stop}>
+              <Ionicons name="close" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
         </LinearGradient>

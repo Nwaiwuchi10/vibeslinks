@@ -7,6 +7,7 @@ import { Feather, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/
 import { ResizeMode, Video } from 'expo-av';
 import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Dimensions,
@@ -96,12 +97,23 @@ function isVideoUrl(url?: string | null, hint?: string): boolean {
 
 // ─── Video Cell ───────────────────────────────────────────────────────────────
 
-function VideoCell({ uri }: { uri: string }) {
+function VideoCell({ uri, isActive = true }: { uri: string; isActive?: boolean }) {
     const videoRef = useRef<Video>(null);
+    const isScreenFocused = useIsFocused();
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
 
     let resolvedUri = resolveImageUrl(uri) || uri;
+    const canPlay = isActive && isScreenFocused;
+
+    // Immediately pause and mute when slide is swiped away or screen loses focus
+    useEffect(() => {
+        if (!canPlay && videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+            videoRef.current.setIsMutedAsync(true).catch(() => {});
+            setIsPlaying(false);
+        }
+    }, [canPlay]);
 
     const togglePlay = async () => {
         if (!videoRef.current) return;
@@ -110,6 +122,10 @@ function VideoCell({ uri }: { uri: string }) {
                 await videoRef.current.pauseAsync();
                 setIsPlaying(false);
             } else {
+                if (isMuted) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    setIsMuted(false);
+                }
                 await videoRef.current.playAsync();
                 setIsPlaying(true);
             }
@@ -138,7 +154,7 @@ function VideoCell({ uri }: { uri: string }) {
                 useNativeControls={false}
                 shouldPlay={false}
                 isLooping
-                isMuted={isMuted}
+                isMuted={!canPlay || isMuted}
                 onError={(err) => {
                     console.warn('[VideoCell] Android/iOS Video Error:', err, 'URI:', resolvedUri);
                 }}
@@ -180,6 +196,7 @@ function MediaRenderer({
     imageSource?: any;
     onMediaPress?: () => void;
 }) {
+    const isScreenFocused = useIsFocused();
     const allUrls: string[] = [];
     const addUrl = (u?: string | null) => {
         if (!u) return;
@@ -223,7 +240,7 @@ function MediaRenderer({
         if (isVideoUrl(url, hint)) {
             return (
                 <TouchableOpacity activeOpacity={0.95} onPress={onMediaPress}>
-                    <VideoCell uri={url} />
+                    <VideoCell uri={url} isActive={isScreenFocused} />
                 </TouchableOpacity>
             );
         }
@@ -258,15 +275,9 @@ function MediaCarousel({
     mediaType?: string;
     onMediaPress?: () => void;
 }) {
+    const isScreenFocused = useIsFocused();
     const [activeIndex, setActiveIndex] = useState(0);
     const flatRef = useRef<FlatList>(null);
-    const lastTap = useRef<number>(0);
-
-    const handlePress = () => {
-        const now = Date.now();
-        lastTap.current = now;
-        onMediaPress?.();
-    };
 
     const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
@@ -290,14 +301,15 @@ function MediaCarousel({
                 viewabilityConfig={viewabilityConfig}
                 renderItem={({ item: url, index: idx }) => {
                     const hint = typeHints[idx] || mediaType;
+                    const isSlideActive = idx === activeIndex && isScreenFocused;
                     return (
                         <TouchableOpacity
                             style={styles.carouselSlide}
                             activeOpacity={0.95}
-                            onPress={handlePress}
+                            onPress={onMediaPress}
                         >
                             {isVideoUrl(url, hint) ? (
-                                <VideoCell uri={url} />
+                                <VideoCell uri={url} isActive={isSlideActive} />
                             ) : (
                                 <ExpoImage source={{ uri: url }} style={styles.socialImage} contentFit="cover" />
                             )}
@@ -526,7 +538,7 @@ export default function PhotoSocialPost({ post, imageSource }: Props) {
                         <View style={{ flex: 1 }}>
                             <Text style={styles.socialName} numberOfLines={1}>
                                 {username}{' '}
-                                <MaterialIcons name="verified" size={12} color={Colors.primary} />
+                                {/* <MaterialIcons name="verified" size={12} color={Colors.primary} /> */}
                                 {timestamp ? (
                                     <Text style={styles.socialTime}> · {timestamp}</Text>
                                 ) : null}

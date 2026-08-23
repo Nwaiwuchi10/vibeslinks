@@ -8,13 +8,16 @@ class SocketService {
   private socket: Socket | null = null;
   private userId: string | null = null;
 
-  connect(token: string, userId?: string) {
+  connect(token?: string, userId?: string) {
     if (this.socket?.connected) return;
 
-    this.userId = userId || null;
+    const authToken = token || store.getState().auth?.token || '';
+    const currentUserId = userId || store.getState().auth?.user?.id || (store.getState().auth?.user as any)?._id || null;
+
+    this.userId = currentUserId;
 
     this.socket = io(BASE_URL, {
-      auth: { token, accessToken: token },
+      auth: { token: authToken, accessToken: authToken },
       transports: ['polling', 'websocket'],
       autoConnect: true,
       reconnection: true,
@@ -122,6 +125,35 @@ class SocketService {
     this.socket?.on('livestream:viewer.joined', callback);
   }
 
+  // ─── TikTok LIVE Real-Time Event Listeners ──────────────────────────────────
+  onGiftSent(callback: (data: any) => void) {
+    this.socket?.on('livestream:gift.sent', callback);
+  }
+
+  onTopGiftersUpdated(callback: (data: any) => void) {
+    this.socket?.on('livestream:top_gifters.updated', callback);
+  }
+
+  onLikeBurst(callback: (data: any) => void) {
+    this.socket?.on('livestream:like.burst', callback);
+  }
+
+  onChatPin(callback: (data: any) => void) {
+    this.socket?.on('livestream:chat.pin', callback);
+  }
+
+  onPkBattleStart(callback: (data: any) => void) {
+    this.socket?.on('livestream:pk.start', callback);
+  }
+
+  onPkBattleScore(callback: (data: any) => void) {
+    this.socket?.on('livestream:pk.score', callback);
+  }
+
+  onPkBattleEnd(callback: (data: any) => void) {
+    this.socket?.on('livestream:pk.end', callback);
+  }
+
   offLivestreamEvents() {
     if (!this.socket) return;
     this.socket.off('livestream:updated');
@@ -129,6 +161,13 @@ class SocketService {
     this.socket.off('notification:new');
     this.socket.off('livestream:reaction');
     this.socket.off('livestream:viewer.joined');
+    this.socket.off('livestream:gift.sent');
+    this.socket.off('livestream:top_gifters.updated');
+    this.socket.off('livestream:like.burst');
+    this.socket.off('livestream:chat.pin');
+    this.socket.off('livestream:pk.start');
+    this.socket.off('livestream:pk.score');
+    this.socket.off('livestream:pk.end');
   }
 
   // ─── Legacy Compatibility Methods ──────────────────────────────────────────

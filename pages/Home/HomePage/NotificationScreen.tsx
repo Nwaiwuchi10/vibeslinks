@@ -162,12 +162,16 @@ export default function NotificationScreen() {
 
         // Deep link redirection based on notification metadata / category
         const metadata = item.metadata;
-        if (metadata?.eventId) {
-            router.push({ pathname: '/event-details', params: { id: metadata.eventId } });
-        } else if (metadata?.postId) {
-            router.push({ pathname: '/post-details', params: { id: metadata.postId } });
-        } else if (metadata?.chatId || metadata?.threadId) {
-            router.push({ pathname: '/chat-detail', params: { id: metadata.chatId || metadata.threadId } });
+        const targetEventId = metadata?.eventId || (item as any).eventId;
+        const targetPostId = metadata?.postId || (item as any).postId;
+        const targetChatId = metadata?.chatId || metadata?.threadId || (item as any).chatId;
+
+        if (targetEventId) {
+            router.push({ pathname: '/event-details', params: { id: targetEventId } });
+        } else if (targetPostId) {
+            router.push({ pathname: '/post-details', params: { id: targetPostId } });
+        } else if (targetChatId) {
+            router.push({ pathname: '/chat-detail', params: { id: targetChatId } });
         }
     };
 

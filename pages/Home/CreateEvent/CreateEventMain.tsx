@@ -28,20 +28,54 @@ const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
         try {
           const res = await eventService.getEventById(params.eventId!);
           const evt = res?.event || res;
+          const registeredIds: string[] = [];
+          const customArtists: any[] = [];
+
+          (evt.artistes || []).forEach((a: any) => {
+            const id = a.id || a.userId || a._id;
+            if (id && !String(id).startsWith('custom_')) {
+              registeredIds.push(String(id));
+            } else {
+              customArtists.push({
+                id: id || `custom_${Date.now()}`,
+                name: a.name || 'Artist',
+                imageUrl: a.profilePictureUrl || a.imageUrl || a.avatarUrl,
+                category: a.category,
+                isCustom: true,
+              });
+            }
+          });
+
+          if (Array.isArray(evt.featuredArtists)) {
+            evt.featuredArtists.forEach((fa: any) => {
+              if (!customArtists.some(c => c.name === fa.name)) {
+                customArtists.push({
+                  id: fa.id || `custom_${Date.now()}`,
+                  name: fa.name,
+                  imageUrl: fa.profilePictureUrl || fa.imageUrl,
+                  category: fa.category,
+                  isCustom: true,
+                });
+              }
+            });
+          }
+
           updateEventData({
             title: evt.title || '',
             description: evt.description || '',
             category: evt.category || '',
             imageUrl: evt.imageUrl || evt.eventPosterUrl || '',
-            startsAt: evt.startsAt || '',
-            endsAt: evt.endsAt || '',
+            eventPosterUrl: evt.eventPosterUrl || evt.imageUrl || '',
+            startsAt: evt.startsAt || evt.startDateTime || '',
+            endsAt: evt.endsAt || evt.endDateTime || '',
             timezone: evt.timezone || 'Africa/Lagos',
             venue: evt.venue || '',
             location: evt.location || '',
             venueLocation: evt.venueLocation || { name: '', address: '', mapUrl: '', latitude: 0, longitude: 0 },
-            ticketTiers: evt.ticketTiers || [],
-            artisteIds: (evt.artistes || []).map((a: any) => a.id || a.userId || a._id),
-            virtualEvent: evt.virtualEvent || false,
+            ticketTiers: evt.ticketTiers || evt.ticketPricingTiers || [],
+            artisteIds: registeredIds,
+            featuredArtists: customArtists,
+            virtualEvent: Boolean(evt.virtualEvent),
           });
           setStep('details');
         } catch (err) {
@@ -71,7 +105,6 @@ const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
   const handleContinueFromStep1 = (type: 'physical' | 'livestream') => {
     if (type === 'livestream') {
       router.push('/go-live');
-      if (onFinish) onFinish();
       return;
     }
     updateEventData({ virtualEvent: false });
@@ -116,43 +149,98 @@ const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
     return url;
   };
 
+  const buildEventPayload = async (isDraft: boolean) => {
+    const resolvedCoverUrl = await getPayloadImageUrl(eventData.imageUrl);
+    const venueName = eventData.venue?.trim() || eventData.location?.trim() || 'Venue TBA';
+    const fullLocation = [eventData.venue, eventData.location, eventData.city, eventData.country]
+      .filter(Boolean)
+      .join(', ');
+
+    const registeredArtistIds = (eventData.artisteIds || []).filter(
+      (id) => !id.startsWith('custom_')
+    );
+
+    const customFeaturedArtists = (eventData.featuredArtists || []).map((a) => ({
+      name: a.name,
+      category: a.category || undefined,
+      imageUrl: a.imageUrl || a.profilePictureUrl || undefined,
+      profilePictureUrl: a.profilePictureUrl || a.imageUrl || undefined,
+    }));
+
+    const normalizedTiers = (eventData.ticketTiers || []).map((t) => {
+      const name = t.tierName || t.ticketName || 'General';
+      const isFree = t.freeEntry === true || t.price === 0;
+      const price = isFree ? 0 : Number(t.price) || 0;
+      const capacity = Number(t.capacity || t.quantity) || 100;
+      const currency = (t.currency || 'USD').toUpperCase();
+      const benefits = t.benefits || (t.description ? t.description.split(', ').filter(Boolean) : []);
+      return {
+        id: t.id || undefined,
+        ticketName: name,
+        tierName: name,
+        price,
+        currency,
+        quantity: capacity,
+        capacity,
+        description: t.description || benefits.join('\n') || 'Entry ticket',
+        benefits,
+        freeEntry: isFree,
+      };
+    });
+
+    const totalCapacity =
+      eventData.totalCapacity > 0
+        ? eventData.totalCapacity
+        : normalizedTiers.reduce((sum, tier) => sum + tier.capacity, 0);
+
+    return {
+      title: eventData.title?.trim() || (isDraft ? 'Untitled event draft' : ''),
+      description: eventData.description?.trim() || undefined,
+      category: eventData.category?.trim() || (isDraft ? undefined : 'concert'),
+      imageUrl: resolvedCoverUrl || undefined,
+      eventPosterUrl: resolvedCoverUrl || undefined,
+      venue: venueName,
+      location: fullLocation || venueName,
+      venueLocation: {
+        name: eventData.venueLocation?.name || venueName,
+        address: eventData.venueLocation?.address || fullLocation || venueName,
+        city: eventData.city || undefined,
+        country: eventData.country || undefined,
+        mapUrl: eventData.venueLocation?.mapUrl || '',
+        latitude: eventData.venueLocation?.latitude || 0,
+        longitude: eventData.venueLocation?.longitude || 0,
+      },
+      virtualEvent: Boolean(eventData.virtualEvent),
+      startDateTime: eventData.startsAt || undefined,
+      startsAt: eventData.startsAt || undefined,
+      endDateTime: eventData.endsAt || undefined,
+      endsAt: eventData.endsAt || undefined,
+      timezone: eventData.timezone || 'Africa/Lagos',
+      totalCapacity: totalCapacity > 0 ? totalCapacity : undefined,
+      tags: eventData.tags?.length ? eventData.tags : undefined,
+      dressCode: eventData.dressCode || undefined,
+      ageRestriction: eventData.ageRestriction || undefined,
+      refundPolicy: eventData.refundPolicy || undefined,
+      artisteIds: registeredArtistIds.length > 0 ? registeredArtistIds : undefined,
+      featuredArtists: customFeaturedArtists.length > 0 ? customFeaturedArtists : undefined,
+      artists: customFeaturedArtists.length > 0 ? customFeaturedArtists : undefined,
+      ticketPricingTiers: normalizedTiers,
+      ticketTiers: normalizedTiers,
+      sponsors: [],
+      faqs: [],
+      saveAsDraft: isDraft,
+      publish: !isDraft,
+      status: isDraft ? 'draft' : 'published',
+    };
+  };
+
   const handleSaveDraft = async () => {
     if (isSavingDraft) return;
     setIsSavingDraft(true);
     try {
-      const resolvedCoverUrl = await getPayloadImageUrl(eventData.imageUrl);
-      const payload = {
-        title: eventData.title || 'Untitled Draft',
-        description: eventData.description,
-        category: eventData.category,
-        imageUrl: resolvedCoverUrl,
-        eventPosterUrl: resolvedCoverUrl,
-        location: eventData.location,
-        venue: eventData.venue,
-        venueLocation: {
-          name: eventData.venueLocation.name || eventData.venue,
-          address: eventData.venueLocation.address || eventData.location,
-          mapUrl: eventData.venueLocation.mapUrl || '',
-          latitude: eventData.venueLocation.latitude,
-          longitude: eventData.venueLocation.longitude,
-        },
-        virtualEvent: false,
-        startsAt: eventData.startsAt,
-        endsAt: eventData.endsAt,
-        timezone: eventData.timezone,
-        totalCapacity: eventData.totalCapacity,
-        tags: eventData.tags,
-        dressCode: eventData.dressCode || undefined,
-        ageRestriction: eventData.ageRestriction || undefined,
-        refundPolicy: eventData.refundPolicy || undefined,
-        ticketTiers: eventData.ticketTiers,
-        artistes: (eventData.artisteIds || []).map(id => ({ id })),
-        sponsors: [],
-        faqs: [],
-        publish: false, // Save as draft
-      };
+      const payload = await buildEventPayload(true);
       if (params.eventId) {
-        await eventService.updateEvent(params.eventId, payload);
+        await eventService.saveAndContinueEvent(params.eventId, payload);
       } else {
         await eventService.createEvent(payload);
       }
@@ -182,48 +270,19 @@ const CreateEventInner = ({ onFinish }: { onFinish: () => void }) => {
         router.push({ pathname: '/go-live-preview', params: streamId ? { id: streamId } : undefined });
         return;
       } else {
-        const resolvedCoverUrl = await getPayloadImageUrl(eventData.imageUrl);
-        const payload = {
-          title: eventData.title,
-          description: eventData.description,
-          category: eventData.category,
-          imageUrl: resolvedCoverUrl,
-          eventPosterUrl: resolvedCoverUrl,
-          location: eventData.location,
-          venue: eventData.venue,
-          venueLocation: {
-            name: eventData.venueLocation.name || eventData.venue,
-            address: eventData.venueLocation.address || eventData.location,
-            mapUrl: eventData.venueLocation.mapUrl || '',
-            latitude: eventData.venueLocation.latitude,
-            longitude: eventData.venueLocation.longitude,
-          },
-          virtualEvent: false,
-          startsAt: eventData.startsAt,
-          endsAt: eventData.endsAt,
-          timezone: eventData.timezone,
-          totalCapacity: eventData.totalCapacity,
-          tags: eventData.tags,
-          dressCode: eventData.dressCode || undefined,
-          ageRestriction: eventData.ageRestriction || undefined,
-          refundPolicy: eventData.refundPolicy || undefined,
-          ticketTiers: eventData.ticketTiers,
-          artistes: (eventData.artisteIds || []).map(id => ({ id })),
-          sponsors: [],
-          faqs: [],
-        };
+        const payload = await buildEventPayload(false);
         if (params.eventId) {
           await eventService.updateEvent(params.eventId, payload);
         } else {
           await eventService.createEvent({
             ...payload,
-            imageUrl: eventData.imageUrl, // keep original local URI for createEvent to handle multi-part
+            imageUrl: eventData.imageUrl, // keep original local URI for createEvent to handle multi-part if needed
           });
         }
       }
       setStep('published');
     } catch (err) {
-      // Toast handled by apiClient interceptor
+      console.warn('Publish failed:', err);
     } finally {
       setIsPublishing(false);
     }

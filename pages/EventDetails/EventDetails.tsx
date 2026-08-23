@@ -1,8 +1,15 @@
+import { eventService } from '@/services/eventService';
+import { socketService } from '@/services/socketService';
+import { userService } from '@/services/userService';
+import { RootState } from '@/store';
+import { addCommentToState } from '@/store/slices/eventSlice';
+import { navigateToUserProfile } from '@/utils/profileNavigation';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Dimensions,
     Image,
     ImageBackground,
@@ -13,17 +20,10 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '../../constants/Colors';
-import { eventService } from '@/services/eventService';
-import { userService } from '@/services/userService';
-import { socketService } from '@/services/socketService';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '@/store';
-import { addCommentToState, setComments } from '@/store/slices/eventSlice';
-import { navigateToUserProfile } from '@/utils/profileNavigation';
+import { Colors } from '../../constants/Colors';
 
 const { width } = Dimensions.get('window');
 
@@ -52,7 +52,7 @@ const EventDetails = () => {
             try {
                 setLoading(true);
                 const res = await eventService.getEventDetailsScreen(id!);
-                
+
                 const detailEvent = res?.event || res;
                 if (detailEvent?.userReaction) {
                     setUserReaction(detailEvent.userReaction);
@@ -68,14 +68,14 @@ const EventDetails = () => {
                 try {
                     const friends = await eventService.getEventFriendsAttending(id!);
                     setFriendsAttending(friends || []);
-                } catch {}
+                } catch { }
 
                 try {
                     const allEvs = await eventService.getAllEvents();
                     if (allEvs) {
                         setOtherEvents(allEvs.filter((e: any) => (e.id || e._id) !== id).slice(0, 4));
                     }
-                } catch {}
+                } catch { }
 
             } catch (err) {
                 console.warn('[EventDetails] Fetch failed:', err);
@@ -88,9 +88,9 @@ const EventDetails = () => {
 
     useEffect(() => {
         if (!id) return;
-        
+
         socketService.joinRoom(`event:${id}`);
-        
+
         const handleCommentCreated = (newComment: any) => {
             if (newComment && (newComment.eventId === id || newComment.event === id)) {
                 dispatch(addCommentToState(newComment));
@@ -193,8 +193,8 @@ const EventDetails = () => {
     const countdown = event.countdown || { days: '00', hours: '00', minutes: '00', seconds: '00' };
 
     const isHost = authUser?.id && (host.id || host._id)
-      ? (authUser.id === host.id || authUser.id === host._id)
-      : (authUser?.username && host.username ? authUser.username === host.username : false);
+        ? (authUser.id === host.id || authUser.id === host._id)
+        : (authUser?.username && host.username ? authUser.username === host.username : false);
 
     return (
         <View style={styles.container}>
@@ -214,7 +214,7 @@ const EventDetails = () => {
                             </TouchableOpacity>
                             <View style={{ flexDirection: 'row' }}>
                                 {isHost && (
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={[styles.iconCircle, { marginRight: 10 }]}
                                         onPress={async () => {
                                             try {
@@ -229,14 +229,14 @@ const EventDetails = () => {
                                         <Ionicons name="copy-outline" size={20} color="#FFF" />
                                     </TouchableOpacity>
                                 )}
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={[styles.iconCircle, { marginRight: 10 }]}
                                     onPress={() => handleReactionPress('love')}
                                 >
-                                    <Ionicons 
-                                        name={userReaction ? "heart" : "heart-outline"} 
-                                        size={20} 
-                                        color={userReaction ? "#FF4B4B" : "#FFF"} 
+                                    <Ionicons
+                                        name={userReaction ? "heart" : "heart-outline"}
+                                        size={20}
+                                        color={userReaction ? "#FF4B4B" : "#FFF"}
                                     />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.iconCircle}>
@@ -305,7 +305,7 @@ const EventDetails = () => {
                             <Text style={styles.sectionTitle}>Organizer</Text>
                         </View>
                         <View style={styles.hostCard}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
                                 activeOpacity={0.8}
                                 onPress={() => router.push({
@@ -317,19 +317,19 @@ const EventDetails = () => {
                                     }
                                 })}
                             >
-                                <Image 
-                                    source={host.avatarUrl ? { uri: host.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${host.username}` }} 
-                                    style={styles.hostAvatar} 
+                                <Image
+                                    source={host.avatarUrl ? { uri: host.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${host.username}` }}
+                                    style={styles.hostAvatar}
                                 />
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                     <Text style={styles.hostLabel}>Hosted by</Text>
                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                         <Text style={styles.hostName}>{host.name}</Text>
-                                        <MaterialIcons name="verified" size={14} color={Colors.primary} style={{ marginLeft: 4 }} />
+                                        {/* <MaterialIcons name="verified" size={14} color={Colors.primary} style={{ marginLeft: 4 }} /> */}
                                     </View>
                                 </View>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.followButton, isFollowingHost && styles.followingButton]}
                                 onPress={handleFollowHostToggle}
                             >
@@ -341,7 +341,7 @@ const EventDetails = () => {
                     </View>
 
                     {/* Map Placement */}
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.mapContainer}
                         onPress={() => router.push({ pathname: '/get-direction', params: { eventId: id } })}
                     >
@@ -361,9 +361,9 @@ const EventDetails = () => {
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.artistScroll}>
                                 {artists.map((artist: any, idx: number) => (
                                     <View key={idx} style={styles.artistCard}>
-                                        <Image 
-                                            source={artist.avatarUrl ? { uri: artist.avatarUrl } : require('../../assets/images/burna_boy.png')} 
-                                            style={styles.artistImage} 
+                                        <Image
+                                            source={artist.avatarUrl ? { uri: artist.avatarUrl } : require('../../assets/images/burna_boy.png')}
+                                            style={styles.artistImage}
                                         />
                                         <Text style={styles.artistName}>{artist.name || artist.fullName}</Text>
                                     </View>
@@ -379,9 +379,9 @@ const EventDetails = () => {
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ticketScroll}>
                                 {tickets.map((t: any) => (
                                     <View key={t.id} style={styles.ticketCard}>
-                                        <ImageBackground 
-                                            source={{ uri: heroImage }} 
-                                            style={styles.ticketImgBg} 
+                                        <ImageBackground
+                                            source={{ uri: heroImage }}
+                                            style={styles.ticketImgBg}
                                             imageStyle={{ borderRadius: 16 }}
                                         >
                                             <View style={[styles.ticketTypeBadge, { backgroundColor: '#7B2FFF' }]}>
@@ -392,7 +392,7 @@ const EventDetails = () => {
                                             <Text style={styles.ticketDetails}>{t.description || 'Priority Entry'}</Text>
                                             <View style={styles.ticketFooter}>
                                                 <Text style={styles.ticketPrice}>{t.priceText}<Text style={styles.priceSub}>/Person</Text></Text>
-                                                <TouchableOpacity 
+                                                <TouchableOpacity
                                                     style={[styles.buySmallButton, t.soldOut && styles.soldOutButton]}
                                                     onPress={() => !t.soldOut && router.push({ pathname: '/select-ticket', params: { id } })}
                                                 >
@@ -410,9 +410,9 @@ const EventDetails = () => {
                     {countdown && (
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Event Start In</Text>
-                            <ImageBackground 
-                                source={{ uri: heroImage }} 
-                                style={styles.timerBg} 
+                            <ImageBackground
+                                source={{ uri: heroImage }}
+                                style={styles.timerBg}
                                 imageStyle={{ borderRadius: 16 }}
                             >
                                 <View style={styles.timerOverlay}>
@@ -445,9 +445,9 @@ const EventDetails = () => {
                             <Text style={styles.sectionTitle}>{commentsList.length} Comments</Text>
                         </View>
                         <View style={styles.commentInputRow}>
-                            <TextInput 
-                                placeholder="leave a comment..." 
-                                style={styles.commentInput} 
+                            <TextInput
+                                placeholder="leave a comment..."
+                                style={styles.commentInput}
                                 value={commentText}
                                 onChangeText={setCommentText}
                                 placeholderTextColor="#A0A0A0"
@@ -462,9 +462,9 @@ const EventDetails = () => {
                             return (
                                 <View key={idx} style={styles.commentItem}>
                                     <TouchableOpacity onPress={() => navigateToUserProfile(router, author, currentUserId)} activeOpacity={0.8}>
-                                        <Image 
-                                            source={author.avatarUrl ? { uri: author.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${author.username}` }} 
-                                            style={styles.commentAvatar} 
+                                        <Image
+                                            source={author.avatarUrl ? { uri: author.avatarUrl } : { uri: `https://i.pravatar.cc/150?username=${author.username}` }}
+                                            style={styles.commentAvatar}
                                         />
                                     </TouchableOpacity>
                                     <View style={{ flex: 1 }}>
@@ -472,7 +472,7 @@ const EventDetails = () => {
                                             <TouchableOpacity onPress={() => navigateToUserProfile(router, author, currentUserId)} activeOpacity={0.8}>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                                     <Text style={styles.commentUser}>{author.name}</Text>
-                                                    <MaterialIcons name="verified" size={12} color={Colors.primary} style={{ marginLeft: 4 }} />
+                                                    {/* <MaterialIcons name="verified" size={12} color={Colors.primary} style={{ marginLeft: 4 }} /> */}
                                                 </View>
                                             </TouchableOpacity>
                                             <Text style={styles.commentTime}> . {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '1h'}</Text>
@@ -481,7 +481,7 @@ const EventDetails = () => {
                                             </TouchableOpacity>
                                         </View>
                                         <Text style={styles.commentText}>{item.message}</Text>
-                                        
+
                                         {/* Comment Actions / Nested Replies */}
                                         <View style={styles.commentActions}>
                                             <TouchableOpacity style={styles.commentAction}>
@@ -507,8 +507,8 @@ const EventDetails = () => {
                                 const evPrice = item.ticketPricing?.tiers?.[0]?.price ?? item.price ?? 'Free';
                                 const evCategory = item.category || 'Nightlife';
                                 return (
-                                    <TouchableOpacity 
-                                        key={evId} 
+                                    <TouchableOpacity
+                                        key={evId}
                                         style={styles.otherEventRow}
                                         onPress={() => router.push({ pathname: '/event-details', params: { id: evId } })}
                                     >
@@ -523,7 +523,7 @@ const EventDetails = () => {
                                                 <Text style={styles.otherLoc} numberOfLines={1}>{evLocation}</Text>
                                             </View>
                                             <Text style={styles.otherPrice}>
-                                                {typeof evPrice === 'number' ? `₦${evPrice.toLocaleString()}` : evPrice}
+                                                {typeof evPrice === 'number' ? `$${evPrice.toLocaleString()}` : evPrice}
                                                 <Text style={{ fontSize: 10, color: '#888', fontWeight: 'normal' }}> /Person</Text>
                                             </Text>
                                         </View>
@@ -539,10 +539,10 @@ const EventDetails = () => {
             <View style={[styles.bottomBar, { paddingBottom: bottomPad }]}>
                 <View>
                     <Text style={styles.bottomLabel}>Price</Text>
-                    <Text style={styles.bottomPrice}>{event.stickyPurchase?.priceText || '₦'}</Text>
+                    <Text style={styles.bottomPrice}>{event.stickyPurchase?.priceText || '$'}</Text>
                 </View>
-                <TouchableOpacity 
-                    style={styles.buyButton} 
+                <TouchableOpacity
+                    style={styles.buyButton}
                     onPress={() => router.push({ pathname: '/select-ticket', params: { id } })}
                 >
                     <Text style={styles.buyButtonText}>Buy Tickets</Text>

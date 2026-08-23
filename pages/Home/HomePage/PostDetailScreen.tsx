@@ -27,6 +27,7 @@ import { useAppSelector } from '@/store/hooks';
 
 import { Video, ResizeMode } from 'expo-av';
 import { Dimensions, FlatList } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { resolveImageUrl } from '@/services/apiClient';
 
 import { navigateToUserProfile } from '@/utils/profileNavigation';
@@ -39,10 +40,11 @@ function timeAgo(dateStr?: string | Date, _tick?: number): string {
     if (diff < 0) return 'just now';
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m`;
+    if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    return `${Math.floor(hrs / 24)}d`;
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
 }
 
 function isVideoUrl(url?: string | null, hint?: string): boolean {
@@ -51,10 +53,22 @@ function isVideoUrl(url?: string | null, hint?: string): boolean {
     return /\.(mp4|mov|avi|webm|mkv|m4v|3gp)(\?.*)?$/i.test(url);
 }
 
-function VideoCell({ uri }: { uri: string }) {
+function VideoCell({ uri, isActive = true }: { uri: string; isActive?: boolean }) {
     const videoRef = useRef<Video>(null);
+    const isScreenFocused = useIsFocused();
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+
+    const canPlay = isActive && isScreenFocused;
+
+    // Pause & mute when slide is not active or screen is unfocused
+    useEffect(() => {
+        if (!canPlay && videoRef.current) {
+            videoRef.current.pauseAsync().catch(() => {});
+            videoRef.current.setIsMutedAsync(true).catch(() => {});
+            setIsPlaying(false);
+        }
+    }, [canPlay]);
 
     const togglePlay = async () => {
         if (!videoRef.current) return;
@@ -63,6 +77,10 @@ function VideoCell({ uri }: { uri: string }) {
                 await videoRef.current.pauseAsync();
                 setIsPlaying(false);
             } else {
+                if (isMuted) {
+                    await videoRef.current.setIsMutedAsync(false);
+                    setIsMuted(false);
+                }
                 await videoRef.current.playAsync();
                 setIsPlaying(true);
             }
@@ -91,8 +109,9 @@ function VideoCell({ uri }: { uri: string }) {
                 style={styles.detailVideoPlayer}
                 resizeMode={ResizeMode.COVER}
                 isLooping
-                isMuted={isMuted}
+                isMuted={!canPlay || isMuted}
                 useNativeControls={false}
+                shouldPlay={false}
                 onError={(err) => {
                     console.warn('[VideoCell] Detail Android/iOS Video Error:', err, 'URI:', resolvedUri);
                 }}
@@ -129,16 +148,17 @@ function MediaCarousel({
     typeHints: string[];
     mediaType?: string;
 }) {
+    const isScreenFocused = useIsFocused();
     const [activeIndex, setActiveIndex] = useState(0);
     const flatRef = useRef<FlatList>(null);
 
     const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-        if (viewableItems.length > 0) {
-            setActiveIndex(viewableItems[0].index ?? 0);
+        if (viewableItems.length > 0 && viewableItems[0].index != null) {
+            setActiveIndex(viewableItems[0].index);
         }
     }).current;
 
-    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
     return (
         <View style={styles.carouselWrapper}>
@@ -154,10 +174,11 @@ function MediaCarousel({
                 viewabilityConfig={viewabilityConfig}
                 renderItem={({ item: url, index: idx }) => {
                     const hint = typeHints[idx] || mediaType;
+                    const isSlideActive = idx === activeIndex && isScreenFocused;
                     return (
                         <View style={{ width: SCREEN_WIDTH - 32 }}>
                             {isVideoUrl(url, hint)
-                                ? <VideoCell uri={url} />
+                                ? <VideoCell uri={url} isActive={isSlideActive} />
                                 : <Image source={{ uri: url }} style={styles.postImage} resizeMode="cover" />}
                         </View>
                     );
@@ -184,6 +205,7 @@ function MediaCarousel({
 }
 
 function DetailMediaRenderer({ post }: { post?: any }) {
+    const isScreenFocused = useIsFocused();
     const allUrls: string[] = [];
     const addUrl = (u?: string | null) => {
         if (!u) return;
@@ -211,7 +233,7 @@ function DetailMediaRenderer({ post }: { post?: any }) {
         const url = allUrls[0];
         const hint = typeHints[0] || post?.mediaType;
         if (isVideoUrl(url, hint)) {
-            return <VideoCell uri={url} />;
+            return <VideoCell uri={url} isActive={isScreenFocused} />;
         }
         return (
             <View style={styles.mediaContainer}>
@@ -221,6 +243,26 @@ function DetailMediaRenderer({ post }: { post?: any }) {
     }
 
     return <MediaCarousel allUrls={allUrls} typeHints={typeHints} mediaType={post?.mediaType} />;
+}
+
+function renderCommentText(text: string) {
+    if (!text) return null;
+    // Split by whitespace to process mentions, preserving whitespace characters
+    const words = text.split(/(\s+)/);
+    return (
+        <Text style={styles.commentText}>
+            {words.map((word, i) => {
+                if (word.match(/^@[a-zA-Z0-9_]+/)) {
+                    return (
+                        <Text key={i} style={{ color: Colors.primary, fontWeight: '600' }}>
+                            {word}
+                        </Text>
+                    );
+                }
+                return <Text key={i}>{word}</Text>;
+            })}
+        </Text>
+    );
 }
 
 export default function PostDetailScreen() {
@@ -436,11 +478,11 @@ export default function PostDetailScreen() {
                                     <View style={styles.postAuthorInfo}>
                                         <Text style={styles.postName}>
                                             {username}{' '}
-                                            <MaterialIcons
+                                            {/* <MaterialIcons
                                                 name="verified"
                                                 size={14}
                                                 color={Colors.primary}
-                                            />
+                                            /> */}
                                             {timestamp ? (
                                                 <Text style={styles.postTime}> · {timestamp}</Text>
                                             ) : null}
@@ -543,9 +585,7 @@ export default function PostDetailScreen() {
                                                          {timeAgo(comment.createdAt, nowTick)}
                                                      </Text>
                                                  </View>
-                                                 {commentText ? (
-                                                     <Text style={styles.commentText}>{commentText}</Text>
-                                                 ) : null}
+                                                 {commentText ? renderCommentText(commentText) : null}
                                             </View>
                                         </View>
                                     );

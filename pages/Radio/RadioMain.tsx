@@ -4,12 +4,13 @@ import SearchingRadio from './SearchingRadio';
 import RadioHomeScreen from './RadioHomeScreen';
 import RadioSearchScreen from './RadioSearchScreen';
 import RadioDetailsScreen from './RadioDetailsScreen';
+import { useRadioPlayer } from '../../hooks/useRadioPlayer';
 
 type RadioState = 'searching' | 'home' | 'search' | 'details';
 
 const RadioMain = () => {
   const [state, setState] = useState<RadioState>('searching');
-  const [selectedStation, setSelectedStation] = useState<any>(null);
+  const radioPlayer = useRadioPlayer();
 
   const handleSearchingFinish = () => {
     setState('home');
@@ -24,7 +25,7 @@ const RadioMain = () => {
   };
 
   const handleStationClick = (station: any) => {
-    setSelectedStation(station);
+    radioPlayer.playStation(station);
     setState('details');
   };
 
@@ -38,14 +39,16 @@ const RadioMain = () => {
       {state === 'home' && <RadioHomeScreen 
         onSearchPress={handleOpenSearch} 
         onStationClick={handleStationClick} 
+        radioPlayer={radioPlayer}
       />}
       {state === 'search' && <RadioSearchScreen 
         onBack={handleBackFromSearch} 
         onStationClick={handleStationClick} 
+        radioPlayer={radioPlayer}
       />}
       {state === 'details' && <RadioDetailsScreen 
-        station={selectedStation} 
         onBack={handleBackFromDetails} 
+        radioPlayer={radioPlayer}
       />}
     </View>
   );

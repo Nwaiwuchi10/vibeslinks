@@ -58,6 +58,12 @@ export const eventService = {
     return response.data;
   },
 
+  async saveAndContinueEvent(id: string, eventData: any) {
+    const response = await apiClient.post(`/events/${id}/save-and-continue`, eventData);
+    store.dispatch(showToast({ type: 'success', message: 'Draft saved successfully!' }));
+    return response.data;
+  },
+
   async createLiveStream(data: {
     title: string;
     coverUrl: string;

@@ -21,7 +21,7 @@ export default function LocationConfirmedScreen() {
         console.warn('[LocationConfirmedScreen] Patch onboarding step 2 failed:', err);
       }
     } finally {
-      router.push('/(onboarding)/follow-artists' as any);
+      router.push('/(onboarding)/follow-hosts' as any);
     }
   };
 

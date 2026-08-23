@@ -14,48 +14,85 @@ import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
+import { homeService } from '@/services/homeService';
 import { eventService } from '@/services/eventService';
 import { userService } from '@/services/userService';
+import { resolveImageUrl } from '@/services/apiClient';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/slices/toastSlice';
 
-const MOCK_ARTISTS = [
-  { id: '1', name: 'Sophia Carter', avatar: 'https://i.pravatar.cc/150?img=1' },
-  { id: '2', name: 'Malik Johnson', avatar: 'https://i.pravatar.cc/150?img=11' },
-  { id: '3', name: 'Elena Rossi', avatar: 'https://i.pravatar.cc/150?img=5' },
-  { id: '4', name: 'Hiroshi Tanaka', avatar: 'https://i.pravatar.cc/150?img=8' },
-  { id: '5', name: 'Amina Yusuf', avatar: 'https://i.pravatar.cc/150?img=9' },
-  { id: '6', name: 'Diego Morales', avatar: 'https://i.pravatar.cc/150?img=12' },
-  { id: '7', name: 'Priya Sharma', avatar: 'https://i.pravatar.cc/150?img=20' },
+const MOCK_HOSTS = [
+  { id: '1', name: 'Sophia Carter (Host)', avatar: 'https://i.pravatar.cc/150?img=1' },
+  { id: '2', name: 'Malik Johnson (Host)', avatar: 'https://i.pravatar.cc/150?img=11' },
+  { id: '3', name: 'Elena Rossi (Host)', avatar: 'https://i.pravatar.cc/150?img=5' },
+  { id: '4', name: 'Hiroshi Tanaka (Host)', avatar: 'https://i.pravatar.cc/150?img=8' },
+  { id: '5', name: 'Amina Yusuf (Host)', avatar: 'https://i.pravatar.cc/150?img=9' },
+  { id: '6', name: 'Diego Morales (Host)', avatar: 'https://i.pravatar.cc/150?img=12' },
+  { id: '7', name: 'Priya Sharma (Host)', avatar: 'https://i.pravatar.cc/150?img=20' },
 ];
 
 export default function FollowArtistsScreen() {
   const dispatch = useAppDispatch();
-  const [artists, setArtists] = useState<any[]>(MOCK_ARTISTS);
+  const [hosts, setHosts] = useState<any[]>(MOCK_HOSTS);
   const [selected, setSelected] = useState<string[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    async function loadArtists() {
+    async function loadHosts() {
       setIsLoading(true);
       try {
-        const res = await eventService.getArtistOptions();
-        const list = Array.isArray(res) ? res : res.artists || [];
+        let list: any[] = [];
+        try {
+          const res = await homeService.getSuggestedHosts(20);
+          if (Array.isArray(res) && res.length > 0) list = res;
+        } catch {}
+
+        if (list.length === 0) {
+          try {
+            const res = await homeService.getAllHosts();
+            if (Array.isArray(res) && res.length > 0) list = res;
+          } catch {}
+        }
+
+        if (list.length === 0) {
+          try {
+            const res = await eventService.getArtistOptions();
+            list = Array.isArray(res) ? res : res.artists || [];
+          } catch {}
+        }
+
         if (list.length > 0) {
-          setArtists(list.map((a: any) => ({
-            id: a.id || String(a.userId),
-            name: a.name || a.fullName || 'Artist',
-            avatar: a.avatarUrl || a.profilePictureUrl || `https://i.pravatar.cc/150?img=${a.id || Math.floor(Math.random() * 50)}`,
-          })));
+          setHosts(list.map((h: any) => {
+            const hostName = h.name || h.fullName || h.username || 'Host';
+            const rawAvatar =
+              h.profilePictureUrl ||
+              h.avatarUrl ||
+              h.profilePicture ||
+              h.avatar ||
+              h.picture ||
+              h.image ||
+              null;
+            const resolved = resolveImageUrl(rawAvatar);
+            const finalAvatar =
+              resolved && typeof resolved === 'string' && resolved.trim().length > 0
+                ? resolved
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(hostName)}&background=7C3AED&color=fff&size=500`;
+
+            return {
+              id: String(h.id || h._id || h.userId),
+              name: hostName,
+              avatar: finalAvatar,
+            };
+          }));
         }
       } catch (err) {
-        console.log('[FollowArtistsScreen] Error loading artists, using mocks:', err);
+        console.log('[FollowHostsScreen] Error loading hosts, using mocks:', err);
       } finally {
         setIsLoading(false);
       }
     }
-    loadArtists();
+    loadHosts();
   }, []);
 
   const toggleSelect = (id: string) => {
@@ -69,24 +106,24 @@ export default function FollowArtistsScreen() {
   const handleFollow = async () => {
     try {
       if (selected.length === 0) {
-        dispatch(showToast({ type: 'warning', message: 'Please select at least one artist to follow.' }));
+        dispatch(showToast({ type: 'warning', message: 'Please select at least one host to follow.' }));
         return;
       }
 
-      // Try to follow selected creators
+      // Try to follow selected hosts
       try {
         await Promise.all(
-          selected.map((artistId) => userService.followArtist(artistId))
+          selected.map((hostId) => userService.followHost(hostId))
         );
       } catch (followErr) {
-        console.warn('[FollowArtistsScreen] Follow failed:', followErr);
+        console.warn('[FollowHostsScreen] Follow failed:', followErr);
       }
 
       // Mark step 3 as completed on the backend (gracefully catch errors if backend 500s)
       try {
         await userService.patchMyOnboarding(3, true);
       } catch (onboardingErr) {
-        console.warn('[FollowArtistsScreen] Patch onboarding step 3 failed:', onboardingErr);
+        console.warn('[FollowHostsScreen] Patch onboarding step 3 failed:', onboardingErr);
       }
 
       setShowModal(true);
@@ -106,7 +143,7 @@ export default function FollowArtistsScreen() {
       try {
         await userService.patchMyOnboarding(3, true);
       } catch (onboardingErr) {
-        console.warn('[FollowArtistsScreen] Skip onboarding step 3 failed:', onboardingErr);
+        console.warn('[FollowHostsScreen] Skip onboarding step 3 failed:', onboardingErr);
       }
     } finally {
       router.push('/(onboarding)/account-confirmed' as any);
@@ -130,22 +167,22 @@ export default function FollowArtistsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Follow Artists</Text>
-        <Text style={styles.subtitle}>Follow creators you love or people you may know.</Text>
+        <Text style={styles.title}>Follow Hosts</Text>
+        <Text style={styles.subtitle}>Follow hosts and creators you love or people you may know.</Text>
 
         <View style={styles.listContainer}>
-          {artists.map((artist) => {
-            const isSelected = selected.includes(artist.id);
+          {hosts.map((host) => {
+            const isSelected = selected.includes(host.id);
             return (
               <TouchableOpacity
-                key={artist.id}
+                key={host.id}
                 style={styles.artistRow}
                 activeOpacity={0.7}
-                onPress={() => toggleSelect(artist.id)}
+                onPress={() => toggleSelect(host.id)}
               >
-                <Image source={{ uri: artist.avatar }} style={styles.avatar} />
+                <Image source={{ uri: host.avatar }} style={styles.avatar} />
                 <Text style={[styles.artistName, isSelected && styles.artistNameSelected]}>
-                  {artist.name}
+                  {host.name}
                 </Text>
                 
                 <View style={[styles.checkCircle, isSelected && styles.checkCircleSelected]}>
